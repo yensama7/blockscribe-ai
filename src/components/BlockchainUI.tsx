@@ -15,7 +15,10 @@ import {
   Zap,
   BookOpen,
   Hash,
-  Wallet
+  Wallet,
+  Star,
+  TrendingUp,
+  Users
 } from 'lucide-react';
 
 interface Document {
@@ -32,7 +35,12 @@ export const BlockchainUI = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [documents] = useState<Document[]>([
+  
+  const [frequentlySearched] = useState([
+    'Machine Learning', 'Blockchain', 'Quantum Computing', 'AI Ethics', 'Cryptography'
+  ]);
+  
+  const [recentDocuments] = useState<Document[]>([
     {
       id: '1',
       title: 'Quantum Computing in Cryptography',
@@ -50,6 +58,15 @@ export const BlockchainUI = () => {
       hash: '0x9b3c...a1d2',
       uploader: '0x9876...5432',
       summary: 'Introduction to core concepts and practical applications of machine learning.'
+    },
+    {
+      id: '3',
+      title: 'Blockchain Consensus Mechanisms',
+      keywords: ['blockchain', 'consensus', 'proof-of-stake'],
+      difficulty: 'Advanced',
+      hash: '0x4e1f...c7b8',
+      uploader: '0x2468...1357',
+      summary: 'Deep dive into various blockchain consensus algorithms and their trade-offs.'
     }
   ]);
 
@@ -73,7 +90,7 @@ export const BlockchainUI = () => {
   return (
     <div className="min-h-screen bg-background neural-network">
       {/* Header */}
-      <header className="border-b border-border/50 backdrop-blur-sm bg-background/80">
+      <header className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -93,155 +110,189 @@ export const BlockchainUI = () => {
         </div>
       </header>
 
-      <div className="container mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Upload Section */}
-          <div className="lg:col-span-2 space-y-6">
+      {/* Hero Section */}
+      <section className="relative py-20 px-6">
+        <div className="container mx-auto text-center">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-6xl font-bold text-foreground mb-6 leading-tight">
+              Revolutionize Academic
+              <span className="block gradient-text">Research Discovery</span>
+            </h1>
+            <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+              Upload, index, and discover academic documents with AI-powered metadata extraction 
+              and blockchain verification. Join the decentralized knowledge network.
+            </p>
+            
+            {/* Main Search Bar */}
+            <div className="relative max-w-2xl mx-auto mb-12">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <Input
+                placeholder="Search academic papers, research topics, authors..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-12 pr-4 py-4 text-lg border-border/50 rounded-full bg-card/80 backdrop-blur-sm cyber-glow"
+              />
+              <Button className="absolute right-2 top-1/2 transform -translate-y-1/2 rounded-full gradient-primary">
+                Search
+              </Button>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary mb-2">12,847</div>
+                <div className="text-muted-foreground">Documents Indexed</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-accent mb-2">5,429</div>
+                <div className="text-muted-foreground">Active Researchers</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary mb-2">98.7%</div>
+                <div className="text-muted-foreground">Verification Rate</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Upload Section */}
+      <section className="py-16 px-6">
+        <div className="container mx-auto">
+          <div className="max-w-4xl mx-auto">
             <Card className="border-border/50 backdrop-blur-sm bg-card/80 cyber-glow">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Upload className="w-5 h-5 text-primary" />
-                  <span>Upload Academic Document</span>
+              <CardHeader className="text-center pb-6">
+                <CardTitle className="text-3xl flex items-center justify-center space-x-3">
+                  <Upload className="w-8 h-8 text-primary" />
+                  <span>Upload Your Research</span>
                 </CardTitle>
-                <CardDescription>
-                  Upload your PDF and let AI extract metadata for blockchain indexing
+                <CardDescription className="text-lg mt-2">
+                  AI will extract metadata and create a blockchain-verified index for your academic document
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
-                  <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-4">Drag & drop your PDF here or click to browse</p>
-                  <Button onClick={handleUpload} disabled={isUploading} className="gradient-primary">
-                    {isUploading ? 'Processing...' : 'Select File'}
+              <CardContent className="space-y-6">
+                <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-all hover:bg-primary/5">
+                  <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-6" />
+                  <h3 className="text-xl font-semibold text-foreground mb-2">Drop your PDF here</h3>
+                  <p className="text-muted-foreground mb-6">or click to browse from your device</p>
+                  <Button onClick={handleUpload} disabled={isUploading} size="lg" className="gradient-primary px-8">
+                    {isUploading ? 'Processing...' : 'Select Document'}
                   </Button>
                 </div>
                 
                 {isUploading && (
-                  <div className="space-y-2">
-                    <Progress value={uploadProgress} className="w-full" />
+                  <div className="space-y-4">
+                    <Progress value={uploadProgress} className="w-full h-3" />
                     <div className="flex justify-between text-sm text-muted-foreground">
-                      <span>Processing with AI...</span>
+                      <span>AI is extracting metadata and generating hash...</span>
                       <span>{uploadProgress}%</span>
                     </div>
                   </div>
                 )}
-              </CardContent>
-            </Card>
 
-            {/* AI Processing Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="border-border/50 backdrop-blur-sm bg-card/80">
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <Brain className="w-5 h-5 text-primary animate-pulse-glow" />
-                    </div>
+                {/* Process Steps */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+                  <div className="flex items-center space-x-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
+                    <Brain className="w-6 h-6 text-primary" />
                     <div>
-                      <p className="text-sm text-muted-foreground">AI Processing</p>
-                      <p className="text-xl font-bold text-foreground">Active</p>
+                      <div className="font-medium text-foreground">AI Analysis</div>
+                      <div className="text-sm text-muted-foreground">Extract keywords & metadata</div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/50 backdrop-blur-sm bg-card/80">
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 rounded-lg bg-accent/10">
-                      <Link className="w-5 h-5 text-accent animate-blockchain-spin" />
-                    </div>
+                  <div className="flex items-center space-x-3 p-4 rounded-lg bg-accent/5 border border-accent/20">
+                    <Hash className="w-6 h-6 text-accent" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Blockchain</p>
-                      <p className="text-xl font-bold text-foreground">Solana</p>
+                      <div className="font-medium text-foreground">Blockchain Index</div>
+                      <div className="text-sm text-muted-foreground">Create immutable record</div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/50 backdrop-blur-sm bg-card/80">
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 rounded-lg bg-destructive/10">
-                      <Database className="w-5 h-5 text-destructive animate-float" />
-                    </div>
+                  <div className="flex items-center space-x-3 p-4 rounded-lg bg-destructive/5 border border-destructive/20">
+                    <Database className="w-6 h-6 text-destructive" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Storage</p>
-                      <p className="text-xl font-bold text-foreground">IPFS</p>
+                      <div className="font-medium text-foreground">IPFS Storage</div>
+                      <div className="text-sm text-muted-foreground">Decentralized hosting</div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Search */}
-            <Card className="border-border/50 backdrop-blur-sm bg-card/80 accent-glow">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Search className="w-5 h-5 text-accent" />
-                  <span>Search Documents</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Input
-                  placeholder="Search by keywords, difficulty..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="border-border/50"
-                />
-              </CardContent>
-            </Card>
-
-            {/* Network Status */}
-            <Card className="border-border/50 backdrop-blur-sm bg-card/80">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Shield className="w-5 h-5 text-primary" />
-                  <span>Network Status</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Connection</span>
-                  <Badge variant="secondary" className="bg-accent/20 text-accent">
-                    <div className="w-2 h-2 bg-accent rounded-full mr-2 animate-pulse"></div>
-                    Online
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Block Height</span>
-                  <span className="text-sm font-mono">234,567,890</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Gas Price</span>
-                  <span className="text-sm font-mono">0.000021 SOL</span>
                 </div>
               </CardContent>
             </Card>
           </div>
         </div>
+      </section>
 
-        {/* Documents Grid */}
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center">
-            <Hash className="w-6 h-6 mr-2 text-primary" />
-            Indexed Documents
-          </h2>
+      {/* Frequently Searched */}
+      <section className="py-16 px-6 bg-muted/30">
+        <div className="container mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-foreground mb-4 flex items-center justify-center">
+              <TrendingUp className="w-8 h-8 mr-3 text-primary" />
+              Trending Research Topics
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Discover what the academic community is researching most actively
+            </p>
+          </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {documents.map((doc) => (
-              <Card key={doc.id} className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all">
+          <div className="flex flex-wrap justify-center gap-3 mb-12">
+            {frequentlySearched.map((topic) => (
+              <Button
+                key={topic}
+                variant="outline"
+                className="border-border/50 bg-card/80 backdrop-blur-sm hover:cyber-glow transition-all"
+                onClick={() => setSearchQuery(topic)}
+              >
+                <Search className="w-4 h-4 mr-2" />
+                {topic}
+              </Button>
+            ))}
+          </div>
+
+          {/* Featured Categories */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { name: 'Artificial Intelligence', count: '2,847', icon: Brain, color: 'text-primary' },
+              { name: 'Blockchain & Crypto', count: '1,923', icon: Link, color: 'text-accent' },
+              { name: 'Quantum Computing', count: '987', icon: Zap, color: 'text-destructive' },
+              { name: 'Biotechnology', count: '1,456', icon: Star, color: 'text-primary' }
+            ].map((category) => (
+              <Card key={category.name} className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all cursor-pointer">
+                <CardContent className="p-6 text-center">
+                  <category.icon className={`w-8 h-8 ${category.color} mx-auto mb-3`} />
+                  <h3 className="font-semibold text-foreground mb-1">{category.name}</h3>
+                  <p className="text-sm text-muted-foreground">{category.count} papers</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Recent Documents */}
+      <section className="py-16 px-6">
+        <div className="container mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-foreground mb-4 flex items-center justify-center">
+              <Hash className="w-8 h-8 mr-3 text-primary" />
+              Recently Indexed Papers
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Latest research papers verified and indexed on the blockchain
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {recentDocuments.map((doc) => (
+              <Card key={doc.id} className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all group cursor-pointer">
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{doc.title}</CardTitle>
+                    <div className="flex-1">
+                      <CardTitle className="text-lg group-hover:text-primary transition-colors">{doc.title}</CardTitle>
                       <CardDescription className="mt-2">{doc.summary}</CardDescription>
                     </div>
                     <Badge 
                       variant={doc.difficulty === 'Advanced' ? 'destructive' : 
                               doc.difficulty === 'Intermediate' ? 'default' : 'secondary'}
+                      className="ml-2"
                     >
                       {doc.difficulty}
                     </Badge>
@@ -249,11 +300,16 @@ export const BlockchainUI = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap gap-2">
-                    {doc.keywords.map((keyword) => (
+                    {doc.keywords.slice(0, 3).map((keyword) => (
                       <Badge key={keyword} variant="outline" className="text-xs">
                         {keyword}
                       </Badge>
                     ))}
+                    {doc.keywords.length > 3 && (
+                      <Badge variant="outline" className="text-xs">
+                        +{doc.keywords.length - 3} more
+                      </Badge>
+                    )}
                   </div>
                   
                   <div className="space-y-2 text-sm">
@@ -262,18 +318,18 @@ export const BlockchainUI = () => {
                       <span className="font-mono text-primary">{doc.hash}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Uploader:</span>
+                      <span className="text-muted-foreground">Author:</span>
                       <span className="font-mono text-accent">{doc.uploader}</span>
                     </div>
                   </div>
                   
-                  <div className="flex space-x-2">
+                  <div className="flex space-x-2 pt-2">
                     <Button size="sm" variant="outline" className="flex-1">
-                      <Zap className="w-4 h-4 mr-2" />
+                      <Zap className="w-4 h-4 mr-1" />
                       View
                     </Button>
                     <Button size="sm" variant="outline" className="flex-1">
-                      <Link className="w-4 h-4 mr-2" />
+                      <Shield className="w-4 h-4 mr-1" />
                       Verify
                     </Button>
                   </div>
@@ -281,8 +337,15 @@ export const BlockchainUI = () => {
               </Card>
             ))}
           </div>
+
+          <div className="text-center mt-12">
+            <Button variant="outline" size="lg" className="px-8">
+              <Users className="w-5 h-5 mr-2" />
+              Explore All Papers
+            </Button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 };
