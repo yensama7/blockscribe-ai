@@ -8,34 +8,34 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Blockchain-themed color palette */
-    --background: 220 20% 4%;
+    /* Blockchain-themed color palette - Brightened */
+    --background: 220 20% 8%;
     --foreground: 210 40% 98%;
 
-    --card: 220 15% 6%;
+    --card: 220 15% 12%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 220 15% 6%;
+    --popover: 220 15% 12%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 258 90% 66%;
-    --primary-foreground: 220 20% 4%;
+    --primary: 258 90% 70%;
+    --primary-foreground: 220 20% 8%;
 
-    --secondary: 220 14% 12%;
+    --secondary: 220 14% 18%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 220 14% 12%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 220 14% 18%;
+    --muted-foreground: 215 20.2% 70%;
 
-    --accent: 142 76% 36%;
+    --accent: 142 76% 45%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 220 13% 18%;
-    --input: 220 13% 18%;
-    --ring: 258 90% 66%;
+    --border: 220 13% 25%;
+    --input: 220 13% 25%;
+    --ring: 258 90% 70%;
 
     --radius: 0.75rem;
 
@@ -49,54 +49,54 @@ All colors MUST be HSL.
     --glow-accent: 0 0 15px hsl(142 76% 36% / 0.3);
     --glow-cyber: 0 0 25px hsl(195 100% 50% / 0.3);
 
-    --sidebar-background: 220 20% 4%;
+    --sidebar-background: 220 20% 8%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 258 90% 66%;
-    --sidebar-primary-foreground: 220 20% 4%;
-    --sidebar-accent: 220 14% 12%;
+    --sidebar-primary: 258 90% 70%;
+    --sidebar-primary-foreground: 220 20% 8%;
+    --sidebar-accent: 220 14% 18%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 220 13% 18%;
-    --sidebar-ring: 258 90% 66%;
+    --sidebar-border: 220 13% 25%;
+    --sidebar-ring: 258 90% 70%;
   }
 
   .dark {
-    /* Enhanced dark mode for blockchain aesthetic */
-    --background: 220 20% 3%;
+    /* Enhanced dark mode for blockchain aesthetic - Brightened */
+    --background: 220 20% 6%;
     --foreground: 210 40% 98%;
 
-    --card: 220 15% 5%;
+    --card: 220 15% 10%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 220 15% 5%;
+    --popover: 220 15% 10%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 258 90% 70%;
-    --primary-foreground: 220 20% 3%;
+    --primary: 258 90% 75%;
+    --primary-foreground: 220 20% 6%;
 
-    --secondary: 220 14% 10%;
+    --secondary: 220 14% 15%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 220 14% 10%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 220 14% 15%;
+    --muted-foreground: 215 20.2% 75%;
 
-    --accent: 142 76% 40%;
+    --accent: 142 76% 50%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 220 13% 15%;
-    --input: 220 13% 15%;
-    --ring: 258 90% 70%;
+    --border: 220 13% 20%;
+    --input: 220 13% 20%;
+    --ring: 258 90% 75%;
     
-    --sidebar-background: 220 20% 3%;
+    --sidebar-background: 220 20% 6%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 258 90% 70%;
-    --sidebar-primary-foreground: 220 20% 3%;
-    --sidebar-accent: 220 14% 10%;
+    --sidebar-primary: 258 90% 75%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 220 14% 15%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 220 13% 15%;
-    --sidebar-ring: 258 90% 70%;
+    --sidebar-border: 220 13% 20%;
+    --sidebar-ring: 258 90% 75%;
   }
 }
 
@@ -134,12 +134,19 @@ All colors MUST be HSL.
     background: var(--gradient-neural);
   }
 
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
   /* Neural network animation */
   .neural-network {
     background-image: 
-      radial-gradient(circle at 20% 20%, hsl(258 90% 66% / 0.1) 0%, transparent 50%),
-      radial-gradient(circle at 80% 80%, hsl(142 76% 36% / 0.1) 0%, transparent 50%),
-      radial-gradient(circle at 40% 70%, hsl(195 100% 50% / 0.1) 0%, transparent 50%);
+      radial-gradient(circle at 20% 20%, hsl(258 90% 70% / 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, hsl(142 76% 45% / 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 40% 70%, hsl(195 100% 50% / 0.15) 0%, transparent 50%);
     animation: neural-pulse 8s ease-in-out infinite;
   }
 
