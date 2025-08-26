@@ -108,6 +108,44 @@ export const BlockchainUI = () => {
             </Button>
           </div>
         </div>
+        
+        {/* Navigation Bar */}
+        <div className="border-t border-border/30">
+          <div className="container mx-auto px-6">
+            <nav className="flex items-center space-x-8 py-3 overflow-x-auto">
+              <Button variant="ghost" size="sm" className="flex items-center space-x-2 whitespace-nowrap">
+                <Upload className="w-4 h-4" />
+                <span>Upload</span>
+              </Button>
+              <Button variant="ghost" size="sm" className="flex items-center space-x-2 whitespace-nowrap">
+                <Shield className="w-4 h-4" />
+                <span>Verify</span>
+              </Button>
+              <div className="flex items-center space-x-1">
+                <span className="text-sm text-muted-foreground mr-2">Genres:</span>
+                {['AI & ML', 'Blockchain', 'Quantum', 'Biology', 'Physics'].map((genre) => (
+                  <Button key={genre} variant="ghost" size="sm" className="text-xs px-2 py-1 h-auto">
+                    {genre}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex items-center space-x-1 ml-auto">
+                <span className="text-sm text-muted-foreground mr-2">Trending:</span>
+                {frequentlySearched.slice(0, 3).map((topic) => (
+                  <Button
+                    key={topic}
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs px-2 py-1 h-auto text-primary hover:text-primary"
+                    onClick={() => setSearchQuery(topic)}
+                  >
+                    {topic}
+                  </Button>
+                ))}
+              </div>
+            </nav>
+          </div>
+        </div>
       </header>
 
       {/* Hero Section */}
