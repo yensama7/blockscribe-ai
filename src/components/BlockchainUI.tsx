@@ -18,15 +18,8 @@ import {
   Wallet,
   Star,
   TrendingUp,
-  Users,
-  ChevronDown
+  Users
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface Document {
   id: string;
@@ -44,11 +37,7 @@ export const BlockchainUI = () => {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [frequentlySearched] = useState([
-    'Machine Learning', 'Blockchain', 'Quantum Computing', 'AI Ethics', 'Cryptography', 'Neural Networks'
-  ]);
-  
-  const [genres] = useState([
-    'AI & Machine Learning', 'Blockchain & Crypto', 'Quantum Computing', 'Biology & Medicine', 'Physics', 'Computer Science'
+    'Machine Learning', 'Blockchain', 'Quantum Computing', 'AI Ethics', 'Cryptography'
   ]);
   
   const [recentDocuments] = useState<Document[]>([
@@ -132,42 +121,27 @@ export const BlockchainUI = () => {
                 <Shield className="w-4 h-4" />
                 <span>Verify</span>
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="flex items-center space-x-2 whitespace-nowrap">
-                    <span>Genres</span>
-                    <ChevronDown className="w-4 h-4" />
+              <div className="flex items-center space-x-1">
+                <span className="text-sm text-muted-foreground mr-2">Genres:</span>
+                {['AI & ML', 'Blockchain', 'Quantum', 'Biology', 'Physics'].map((genre) => (
+                  <Button key={genre} variant="ghost" size="sm" className="text-xs px-2 py-1 h-auto">
+                    {genre}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56">
-                  {genres.map((genre) => (
-                    <DropdownMenuItem key={genre}>
-                      {genre}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              
-              <div className="ml-auto">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="flex items-center space-x-2 whitespace-nowrap">
-                      <TrendingUp className="w-4 h-4" />
-                      <span>Trending</span>
-                      <ChevronDown className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56">
-                    {frequentlySearched.map((topic) => (
-                      <DropdownMenuItem 
-                        key={topic}
-                        onClick={() => setSearchQuery(topic)}
-                      >
-                        {topic}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                ))}
+              </div>
+              <div className="flex items-center space-x-1 ml-auto">
+                <span className="text-sm text-muted-foreground mr-2">Trending:</span>
+                {frequentlySearched.slice(0, 3).map((topic) => (
+                  <Button
+                    key={topic}
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs px-2 py-1 h-auto text-primary hover:text-primary"
+                    onClick={() => setSearchQuery(topic)}
+                  >
+                    {topic}
+                  </Button>
+                ))}
               </div>
             </nav>
           </div>

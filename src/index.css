@@ -8,14 +8,14 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Blockchain-themed color palette - Brighter version */
-    --background: 220 20% 8%;
+    /* Blockchain-themed color palette */
+    --background: 220 20% 4%;
     --foreground: 210 40% 98%;
 
-    --card: 220 15% 12%;
+    --card: 220 15% 6%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 220 15% 12%;
+    --popover: 220 15% 6%;
     --popover-foreground: 210 40% 98%;
 
     --primary: 258 90% 66%;
@@ -132,13 +132,6 @@ All colors MUST be HSL.
 
   .gradient-neural {
     background: var(--gradient-neural);
-  }
-
-  .gradient-text {
-    background: var(--gradient-primary);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
   }
 
   /* Neural network animation */
