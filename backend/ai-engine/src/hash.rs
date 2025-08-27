@@ -1,8 +1,8 @@
-use sha2;
+use sha2::{Sha256, Digest};
 
 // basic hash function
-fn compute_sha256(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
+pub fn compute_sha256(bytes: &[u8]) -> String {
+    let mut hasher = sha2::Sha256::new();
     hasher.update(bytes);
     let result = hasher.finalize();
     format!("{:x}", result)
