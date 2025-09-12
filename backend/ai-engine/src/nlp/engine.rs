@@ -1,15 +1,16 @@
 // engine.rs : this file contains the code used for extracting the responses needed
-
-// extract the metadata using the OpenAI client. Passes the document text as input
-
 use async_openai::{
     config::OpenAIConfig,
     types::{ChatCompletionRequestMessageArgs, CreateChatCompletionRequestArgs, Role},
     Client,
 };
+
+use serde_json::Value;
+use serder::{Deserialize, Serialize};
+use std::fs;
 use std::env;
 use dotenv::dotenv;
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExtractedMetaData {
     title: Option<String>,
     keywords: Vec<String>,  // is it really possible to not have any keywords LMAO
@@ -37,23 +38,42 @@ pub fn create_client() -> Client<OpenAIConfig>
     Client::with_config(config)
 }
 
-pub async fn send_prompt(prompt: String) -> anyhow::Result<String> {
-    let client = create_client();
-
+// extract the metadata using the OpenAI client. Passes the document text as input
+// uses one client asynchronously
+pub async fn extract_meta_data_from_document(content: String, client: &Client) -> anyhow::Result<ExtractedMetaData>
+{
     let request = CreateChatCompletionRequestArgs::default()
         .model("gpt-4o-mini")
-        .messages([ChatCompletionRequestMessageArgs::default()
-            .role(Role::User)
-            .content(prompt)
-            .build()?
-        ]).build()?;
+        .messages([
+            ChatCompletionRequestMessageArgs::default()
+                .role(Role::System)
+                .content(
+                    "You are an assistant that extracts metadata from academic documents.
+                     Always return valid JSON matching the ExtractedMetaData struct.",
+                ) // TODO: make a better prompt
+                .build()?,
+            ChatCompletionRequestMessageArgs::default()
+                .role(Role::User)
+                .content(format!(
+                    "Here is a document:\n{}\n\nPlease extract the metadata.",
+                    content
+                ))
+                .build()?,
+        ])
+        .build()?;
 
-
+    // Call OpenAI
     let response = client.chat().create(request).await?;
 
-    Ok(response.choices[0]
-        .message
-        .content
-        .clone()
-        .unwrao_or_else(|| "".to_string()))
+    let reply = response
+        .choices
+        .first()
+        .and_then(|c| c.message.content.clone())
+        .ok_or_else(|| anyhow::anyhow!("No response from AI"))?;
+
+    // Try to parse JSON
+    let parsed: ExtractedMetaData = serde_json::from_str(&reply)
+        .map_err(|e| anyhow::anyhow!("Invalid JSON response: {}\nReply: {}", e, reply))?;
+
+    Ok(parsed)
 }
