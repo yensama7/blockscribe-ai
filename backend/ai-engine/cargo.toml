@@ -30,3 +30,9 @@ ipfs-api = "0.17.0"                 # Rust client for the IPFS HTTP API (example
 ipfs-api-backend-hyper = "0.6"      # hyper backend for ipfs-api
 hex = "0.4"
 futures = "0.3"
+
+
+# database setup
+actix-web = "4"
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls", "macros"] }
+
