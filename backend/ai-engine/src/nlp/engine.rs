@@ -136,7 +136,7 @@ pub struct ExtractedMetaData {
     // topics: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRecord {
     pub file_hash: String, // SHA-256 hex of file bytes
     pub file_cid: String,  // IPFS CID returned by the daemon
