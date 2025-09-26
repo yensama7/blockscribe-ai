@@ -33,6 +33,9 @@ futures = "0.3"
 
 
 # database setup
-actix-web = "4"
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls", "macros"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+
+# solana blockchain integration
+solana-client = "3.0.3"
+solana-sdk = { version = "3.0.0", features = ["full"] }
 

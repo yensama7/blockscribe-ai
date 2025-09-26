@@ -1,109 +1,56 @@
-use sqlx::{Pool, Sqlite};
-use nlp::engine::ExtractedMetaData;
+// database.rs: Utilty functions for database integration and handling
 
-// create database connection
-pub async fn init_database() -> Pool<Sqlite> {
-    let pool = Pool::<Sqlite>::connect("sqlite:://metadata.db").await.expect("database connection failed.");
+use rusqlite::{Connection, Result};
+use crate::nlp::engine::ExtractedMetaData;
+use crate::nlp::engine::FileRecord;
 
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS extracted_metadata (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+// because of our lord and saviour: thoughtful developers we can write one function that does both:
+// 1. creating the database
+// 2. adding to the database
+
+
+// please don't get angry at my naming conventions lmao ;)
+pub fn add_to_or_create_database(metadata: &ExtractedMetaData, hash: &FileRecord, database_name: String) -> Result<(), Box<dyn std::error::Error>> {
+    let conn = Connection::open(database_name)?;
+
+
+    // if we dont have a database active; create one
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS archive (
+            id INTEGER PRIMARY KEY,
+            genre TEXT NOT NULL,
             title TEXT NOT NULL,
             difficulty TEXT NOT NULL,
-            genre TEXT NOT NULL,
-            summary TEXT NOT NULL
-        );
-        "#,
-    )
-        .execute(&pool)
-    .await
-        .unwrap();
+            summary TEXT NOT NULL,
+            file_hash TEXT NOT NULL,
+            file_cid TEXT NOT NULL
+        )",
+        (),
+    )?;
 
-    pool
-}
+    // Always insert a new row (duplicates allowed)
+    conn.execute(
+        "INSERT INTO archive
+         (genre, title, difficulty, summary, file_hash, file_cid)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        (
+            &metadata.genre,
+            &metadata.title,
+            &metadata.difficulty,
+            &metadata.summary,
+            &hash.file_hash,
+            &hash.file_cid,
+        ),
+    )?;
+    println!("Inserted new record.");
 
+    // List all genres currently stored
+    let mut stmt = conn.prepare("SELECT genre FROM archive")?;
+    let genres_iter = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    println!("All genres in DB:");
+    for g in genres_iter {
+        println!("  - {}", g?);
+    }
 
-// function to create_metadata
-pub async fn create_metadata(
-    pool: &Pool<Sqlite>,
-    title: &str,
-    difficulty: &str,
-    genre: &str,
-    summary: &str,
-) -> i64
-{
-    let rec = sqlx::query!(
-        r#"
-        INSERT INTO extracted_metadata (title, difficulty, genre, summary)
-        VALUES (?1, ?2, ?3, ?4)
-        "#,
-        title,
-        difficulty,
-        genre,
-        summary
-    )
-        .execute(pool)
-        .await
-        .unwrap();
-
-    rec.last_insert_rowid()
-}
-
-// Read (fetch all)
-pub async fn get_all_metadata(pool: &Pool<Sqlite>) -> Vec<ExtractedMetaData> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT id, title, difficulty, genre, summary
-        FROM extracted_metadata
-        "#
-    )
-        .fetch_all(pool)
-        .await
-        .unwrap();
-
-    rows.into_iter()
-        .map(|r| ExtractedMetaData {
-            id: r.id,
-            title: r.title,
-            difficulty: r.difficulty,
-            genre: r.genre,
-            summary: r.summary,
-        })
-        .collect()
-}
-
-
-// Fetch all metadata where a given field matches a value.
-//
-// `field` can be "title", "difficulty", "genre", or "summary".
-pub async fn get_metadata_by_field(
-    pool: &Pool<Sqlite>,
-    field: &str,
-    value: &str,
-) -> Vec<ExtractedMetaData> {
-    // Validate allowed fields (to avoid SQL injection!)
-    let column = match field {
-        "title" => "title",
-        "difficulty" => "difficulty",
-        "genre" => "genre",
-        "summary" => "summary",
-        _ => panic!("Invalid field: {}", field),
-    };
-
-    // Dynamic SQL with column substitution (safe because column is validated above)
-    let query = format!(
-        "SELECT id, title, difficulty, genre, summary
-         FROM extracted_metadata
-         WHERE {} = ?1",
-        column
-    );
-
-    let rows = sqlx::query_as::<_, ExtractedMetaData>(&query)
-        .bind(value)
-        .fetch_all(pool)
-        .await
-        .unwrap();
-
-    rows
+    Ok(())
 }
