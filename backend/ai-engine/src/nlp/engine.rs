@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use std::io::Cursor;
 use std::path::Path;
 use tokio::fs;
+use dotenv::dotenv;
 
 
 // most important functions
@@ -20,9 +21,12 @@ pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<Extract
     let extracted_txt = extract_text_from_mem(&bytes).unwrap();
 
 
+    // load the dotenv variables
+    dotenv().ok();
+
     // groq api setup
-    let groq_base = "https://api.groq.com/openai/v1/chat/completions";
-    let groq_key = "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";
+    let groq_base = env::var("GROQ_BASE").unwrap_or_else(|_| "https://api.groq.com/openai/v1/chat/completions".to_string());
+    let groq_key = env::var("GROQ_API_KEY").context("GROQ_API_KEY not set in environment variables; \n add it to your .env file".to_string())?;
 
     let client = Client::new();
 
