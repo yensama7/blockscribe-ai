@@ -9,6 +9,7 @@ use anyhow::{anyhow, Context};
 use reqwest::multipart::{Form, Part};
 use ipfs_api::IpfsClient;
 use sha2::{Digest, Sha256};
+use std::env;
 use std::io::Cursor;
 use std::path::Path;
 use tokio::fs;

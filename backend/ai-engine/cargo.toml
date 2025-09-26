@@ -39,3 +39,7 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 solana-client = "3.0.3"
 solana-sdk = { version = "3.0.0", features = ["full"] }
 
+# server
+actix-web = "4"
+
+
