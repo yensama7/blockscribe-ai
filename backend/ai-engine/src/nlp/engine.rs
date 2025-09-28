@@ -123,13 +123,12 @@ pub async fn package_hash_and_cid<P: AsRef<Path>>(
 
 
 // structs to return
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExtractedMetaData {
     pub title: String,
     pub difficulty: String,     // Beginner | intermediate | Advanced etc... yada yada yada; suck your mum
     pub genre: String,
     pub summary: String,
-
 
     // resource_type: String,  // Lecture note, text book, research paper slides etc
     // keywords: Vec<String>,  // is it really possible to not have any keywords LMAO

@@ -5,6 +5,15 @@ use actix_web::{post, get, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Serialize, Deserialize};
 use rusqlite::Connection;
 use std::collections::HashSet;
+use std::path::Path;
+use std::path::PathBuf;
+
+
+use uuid::Uuid;
+use sanitize_filename::sanitize;
+use actix_multipart::Multipart;
+use futures_util::StreamExt;
+use std::io::Write;
 
 // TODO: add signature to the filerecord stuff
 
@@ -47,7 +56,6 @@ pub struct ArchiveRecord{
     file_cid: String,
 }
 // TODO: change this dir to something better
-const UPLOADS_DIR: &str = "./uploads";
 const DB_NAME: &str = "archive.db";
 
 // basic page
@@ -194,10 +202,10 @@ async fn search_by_field(query: web::Query<std::collections::HashMap<String, Str
 }
 
 
-
 // start the actix server
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
+
     HttpServer::new(|| {
         App::new()
             .service(list_all)
@@ -209,4 +217,51 @@ async fn main() -> std::io::Result<()>{
         .bind(("127.0.0.1", 5000))?
         .run()
         .await
+}
+
+#[post("/upload")]
+async fn upload(mut payload: Multipart) -> actix_web::Result<HttpResponse> {
+
+    // basic uploading to the backend server
+    while let Some(item) = payload.next().await {
+        let mut field = item?;
+        let cd = field.content_disposition();
+
+        // Try client filename
+        let client_filename_opt = cd.get_filename().map(|s| s.to_string());
+
+        // Build a safe server filename:
+        // - Generate UUID base
+        // - If client has an extension, keep it (sanitized)
+        let uuid = Uuid::new_v4().to_string();
+        let server_filename = if let Some(ref client) = client_filename_opt {
+            let sanitized = sanitize(&client);
+            if let Some(ext) = std::path::Path::new(&sanitized).extension() {
+                format!("{}.{}", uuid, ext.to_string_lossy())
+            } else {
+                format!("{}", uuid)
+            }
+        } else {
+            format!("{}", uuid)
+        };
+
+        let filepath = format!("./uploads/{}", server_filename);
+        let mut f = std::fs::File::create(&filepath)?;
+
+        while let Some(chunk) = field.next().await {
+            let data = chunk?;
+            f.write_all(&data);
+        }
+
+        // Return both server and original filename (for client metadata)
+        return Ok(HttpResponse::Ok().json(serde_json::json!({
+            "status": "success",
+            "server_filename": server_filename,
+            "original_filename": client_filename_opt
+        })));
+    }
+    Ok(HttpResponse::BadRequest().body("No file"))
+
+
+
 }
