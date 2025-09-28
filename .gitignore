@@ -25,6 +25,7 @@ dist-ssr
 
 # backend output binary
 backend/ai-engine/target
+backend/test-ledger
 
 # .env files
 backend/ai-engine/src/nlp/.env
