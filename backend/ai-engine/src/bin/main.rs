@@ -1,12 +1,14 @@
 // main.rs: This is the server (should've probably called it server.rs lmao)
 
 // server stuff
-use actix_web::{post, get, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{post, get, web, App, HttpResponse, HttpServer, Responder, Error};
 use serde::{Serialize, Deserialize};
 use rusqlite::Connection;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 
 use uuid::Uuid;
@@ -201,6 +203,131 @@ async fn search_by_field(query: web::Query<std::collections::HashMap<String, Str
     }
 }
 
+#[post("/upload")]
+async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
+    // create uploads dir (synchronous ok here)
+    let _ = std::fs::create_dir_all("./uploads");
+
+    // iterate over multipart fields
+    while let Some(field_res) = payload.next().await {
+        let mut field = field_res.map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("Multipart field error: {}", e))
+        })?;
+
+        // clone ContentDisposition (field.content_disposition() returns &ContentDisposition)
+        let cd = field.content_disposition().clone();
+
+        // extract original filename if present
+        let original_filename_opt: Option<String> = cd
+            .get_filename()
+            .map(|s| s.to_string());
+
+        // choose server filename
+        let uuid = Uuid::new_v4().to_string();
+        let server_filename = if let Some(ref orig) = original_filename_opt {
+            let sanitized = sanitize(orig);
+            if let Some(ext) = Path::new(&sanitized).extension() {
+                format!("{}.{}", uuid, ext.to_string_lossy())
+            } else {
+                uuid.clone()
+            }
+        } else {
+            uuid.clone()
+        };
+
+        let filepath = format!("./uploads/{}", server_filename);
+
+
+        // create file asynchronously
+        let mut f = File::create(&filepath).await.map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("File create error: {}", e))
+        })?;
+
+        // async chunk writes
+        while let Some(chunk_res) = field.next().await {
+            let chunk = chunk_res.map_err(|e| {
+                actix_web::error::ErrorInternalServerError(format!("Chunk read error: {}", e))
+            })?;
+            f.write_all(&chunk).await.map_err(|e| {
+                actix_web::error::ErrorInternalServerError(format!("File write error: {}", e))
+            })?;
+        }
+
+        // Step 1: metadata extraction (async)
+        let metadata = match get_meta_data_response(filepath.clone()).await {
+            Ok(m) => m,
+            Err(e) => {
+                return Ok(HttpResponse::InternalServerError()
+                    .body(format!("Metadata extraction failed: {}", e)));
+            }
+        };
+
+        // Step 2: hash + CID packaging (async)
+        let file_record = match package_hash_and_cid(filepath.clone()).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(HttpResponse::InternalServerError()
+                    .body(format!("File packaging failed: {}", e)));
+            }
+        };
+
+        // Step 3: send memo to Solana (blocking work)
+        // Ensure closure returns types that are Send + 'static by mapping errors to String
+        let file_record_clone = file_record.clone();
+        let memo_sig = match tokio::task::spawn_blocking(move || {
+            send_memo(&file_record_clone.file_hash, &file_record_clone.file_cid)
+                .map_err(|e| e.to_string())
+        })
+            .await
+        {
+            Ok(Ok(sig)) => sig,
+            Ok(Err(e_str)) => {
+                return Ok(HttpResponse::InternalServerError()
+                    .body(format!("Solana memo failed: {}", e_str)));
+            }
+            Err(join_err) => {
+                return Ok(HttpResponse::InternalServerError()
+                    .body(format!("Join error in Solana memo: {}", join_err)));
+            }
+        };
+
+        // Step 4: DB insertion (blocking work)
+        let metadata_clone = metadata.clone();
+        let file_record_clone2 = file_record.clone();
+        let db_res = tokio::task::spawn_blocking(move || {
+            add_to_or_create_database(&metadata_clone, &file_record_clone2, "archive.db".to_string())
+                .map_err(|e| e.to_string())
+        })
+            .await;
+
+        // handle spawn_blocking join error
+        let db_inner_res = match db_res {
+            Ok(inner) => inner,
+            Err(join_err) => {
+                return Ok(HttpResponse::InternalServerError()
+                    .body(format!("Database thread join error: {}", join_err)));
+            }
+        };
+
+        if let Err(db_err_str) = db_inner_res {
+            return Ok(HttpResponse::InternalServerError()
+                .body(format!("Database insertion failed: {}", db_err_str)));
+        }
+
+        // Final JSON response for this file
+        return Ok(HttpResponse::Ok().json(serde_json::json!({
+            "status": "success",
+            "server_filename": server_filename,
+            "original_filename": original_filename_opt,
+            "metadata": metadata,
+            "file_record": file_record,
+            "solana_signature": memo_sig
+        })));
+    }
+
+    // if we get here, no fields were uploaded
+    Ok(HttpResponse::BadRequest().body("No file uploaded"))
+}
 
 // start the actix server
 #[actix_web::main]
@@ -212,6 +339,7 @@ async fn main() -> std::io::Result<()>{
             .service(get_entry_by_id)
             .service(search_by_field)
             .service(hello)
+            .service(upload)
             .route("/health", web::get().to(|| async { HttpResponse::Ok().body("OK") }))
     })
         .bind(("127.0.0.1", 5000))?
@@ -219,49 +347,3 @@ async fn main() -> std::io::Result<()>{
         .await
 }
 
-#[post("/upload")]
-async fn upload(mut payload: Multipart) -> actix_web::Result<HttpResponse> {
-
-    // basic uploading to the backend server
-    while let Some(item) = payload.next().await {
-        let mut field = item?;
-        let cd = field.content_disposition();
-
-        // Try client filename
-        let client_filename_opt = cd.get_filename().map(|s| s.to_string());
-
-        // Build a safe server filename:
-        // - Generate UUID base
-        // - If client has an extension, keep it (sanitized)
-        let uuid = Uuid::new_v4().to_string();
-        let server_filename = if let Some(ref client) = client_filename_opt {
-            let sanitized = sanitize(&client);
-            if let Some(ext) = std::path::Path::new(&sanitized).extension() {
-                format!("{}.{}", uuid, ext.to_string_lossy())
-            } else {
-                format!("{}", uuid)
-            }
-        } else {
-            format!("{}", uuid)
-        };
-
-        let filepath = format!("./uploads/{}", server_filename);
-        let mut f = std::fs::File::create(&filepath)?;
-
-        while let Some(chunk) = field.next().await {
-            let data = chunk?;
-            f.write_all(&data);
-        }
-
-        // Return both server and original filename (for client metadata)
-        return Ok(HttpResponse::Ok().json(serde_json::json!({
-            "status": "success",
-            "server_filename": server_filename,
-            "original_filename": client_filename_opt
-        })));
-    }
-    Ok(HttpResponse::BadRequest().body("No file"))
-
-
-
-}
