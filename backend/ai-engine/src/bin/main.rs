@@ -3,10 +3,11 @@
 // server stuff
 use actix_web::{post, get, web, App, HttpResponse, HttpServer, Responder, Error};
 use serde::{Serialize, Deserialize};
+use reqwest::Client;
+use serde_json::Value;
 use rusqlite::Connection;
 use std::collections::HashSet;
 use std::path::Path;
-use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
@@ -15,7 +16,6 @@ use uuid::Uuid;
 use sanitize_filename::sanitize;
 use actix_multipart::Multipart;
 use futures_util::StreamExt;
-use std::io::Write;
 
 // TODO: add signature to the filerecord stuff
 
@@ -45,6 +45,24 @@ pub struct ProcessResponse{
     pub file_record: FileRecord,
     pub memo: String,
 }
+
+
+// VectorDatabase endpoints
+#[derive(Debug, Deserialize)]
+struct VectorSearchRequest{
+    query: String,
+    k: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct VectorSearchResult{
+    id: Vec<Vec<String>>,
+    documents: Vec<Vec<String>>,
+    metadatas: Vec<Vec<Value>>,
+    distances: Vec<Vec<f32>>
+}
+
+
 
 // TODO: should we find a better work around this?
 #[derive(Debug, Serialize, Deserialize)]
@@ -203,7 +221,72 @@ async fn search_by_field(query: web::Query<std::collections::HashMap<String, Str
     }
 }
 
-#[post("/upload")]
+#[get("/analytics/difficulty")]
+async fn difficulty() -> impl Responder {
+    let client = Client::new();
+    let url = "http://127.0.0.1:8001/analytics/difficulty";
+
+    match client.get(url).send().await {
+        Ok(resp) => match resp.json::<Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
+
+#[get("/analytics/genre")]
+async fn genre() -> impl Responder {
+    let client = Client::new();
+    let url = "http://127.0.0.1:8001/analytics/genre";
+
+    match client.get(url).send().await {
+        Ok(resp) => match resp.json::<Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
+
+#[get("/analytics/clusters")]
+async fn clusters(query: web::Query<std::collections::HashMap<String, String>>) -> impl Responder {
+    let client = Client::new();
+    let n = query.get("n").unwrap_or(&"3".to_string()); // default to 3 clusters
+    let url = format!("http://127.0.0.1:8001/analytics/clusters?n={}", n);
+
+    match client.get(&url).send().await {
+        Ok(resp) => match resp.json::<Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
+#[post("/ai-search")]
+async fn search(payload: web::Json<SearchRequest>) -> impl Responder {
+    let client = Client::new();
+    let url = "http://127.0.0.1:8001/search"; // Python FastAPI endpoint
+
+    let body = serde_json::json!({
+        "query": payload.query,
+        "k": payload.k.unwrap_or(3),
+    });
+
+    match client.post(url).json(&body).send().await {
+        Ok(resp) => {
+            if let Ok(json) = resp.json::<SearchResult>().await {
+                HttpResponse::Ok().json(json)
+            } else {
+                HttpResponse::InternalServerError().body("Invalid response from vector service")
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
+
+
+#[post("/api/upload")]
 async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     // create uploads dir (synchronous ok here)
     let _ = std::fs::create_dir_all("./uploads");
@@ -335,6 +418,10 @@ async fn main() -> std::io::Result<()>{
 
     HttpServer::new(|| {
         App::new()
+            .service(search)
+            .service(difficulty)
+            .service(genre)
+            .service(clusters)
             .service(list_all)
             .service(get_entry_by_id)
             .service(search_by_field)

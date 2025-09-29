@@ -3,26 +3,11 @@ pub mod nlp;
 pub mod database;
 pub mod solana;
 
-use std::path::PathBuf;
-use std::ffi::OsStr;
 use std::fs;
-use std::io::{Read, Cursor};
-
-
-use serde_json::{json, Value};
-use tokio;
-use reqwest::Client;
-use regex::Regex;
-use anyhow::{anyhow, Context};
-use reqwest::multipart::{Form, Part};
-use ipfs_api::IpfsClient;
-use sha2::{Digest, Sha256};
-use std::path::Path;
 
 
 // structs
 pub use nlp::engine::{FileRecord, ExtractedMetaData};
-use pdf_extract::extract_text_from_mem;
 
 // we use these two to get the AI response and get the cid and hash for the document
 pub use nlp::engine::get_meta_data_response;

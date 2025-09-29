@@ -3,6 +3,12 @@ name = "ai-engine"
 version = "0.1.0"
 edition = "2024"
 
+# the server binary
+[[bin]]
+name = "server"
+path = "src/bin/main.rs"
+
+
 [dependencies]
 # General utilities
 anyhow = "1.0"        # simple error handling

@@ -1,6 +1,4 @@
 // solana.rs: This file defines all the utilties for uploading the hash and the cid to the solana blockchain
-
-use sha2::digest::Key;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     signature::{ Signer, Keypair},
