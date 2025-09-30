@@ -14,11 +14,9 @@ import {
   Link, 
   Search, 
   Database,
-  Shield,
   Zap,
   BookOpen,
   Hash,
-  Wallet,
   Star,
   TrendingUp,
   Users
@@ -62,7 +60,7 @@ export const BlockchainUI = () => {
   })) || [];
 
   // Extract genres from data
-  const genres = genreData ? Object.keys(genreData).slice(0, 5) : ['AI & ML', 'Blockchain', 'Quantum', 'Biology', 'Physics'];
+  const genres = genreData ? Object.keys(genreData) : [];
   
   // Calculate stats from real data
   const totalDocuments = allMetadata?.length || 0;
@@ -147,16 +145,12 @@ export const BlockchainUI = () => {
               <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center blockchain-glow">
                 <BookOpen className="w-6 h-6 text-primary-foreground" />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">BlockScribe AI</h1>
-                <p className="text-sm text-muted-foreground">Decentralized Academic Intelligence</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">BlockScribe AI</h1>
+              <p className="text-sm text-muted-foreground">Decentralized Academic Intelligence</p>
             </div>
-            <Button variant="outline" className="blockchain-glow">
-              <Wallet className="w-4 h-4 mr-2" />
-              Connect Wallet
-            </Button>
           </div>
+        </div>
         </div>
         
         {/* Navigation Bar */}
@@ -167,28 +161,26 @@ export const BlockchainUI = () => {
                 <Upload className="w-4 h-4" />
                 <span>Upload</span>
               </Button>
-              <Button variant="ghost" size="sm" className="flex items-center space-x-2 whitespace-nowrap">
-                <Shield className="w-4 h-4" />
-                <span>Verify</span>
-              </Button>
-              <div className="flex items-center space-x-1">
-                <span className="text-sm text-muted-foreground mr-2">Genres:</span>
-                {genres.map((genre) => (
-                  <Button 
-                    key={genre} 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-xs px-2 py-1 h-auto"
-                    onClick={() => {
-                      setSearchField('genre');
-                      setSearchQuery(genre);
-                      handleSearch();
-                    }}
-                  >
-                    {genre}
-                  </Button>
-                ))}
-              </div>
+              {genres.length > 0 && (
+                <div className="flex items-center space-x-1">
+                  <span className="text-sm text-muted-foreground mr-2">Genres:</span>
+                  {genres.slice(0, 5).map((genre) => (
+                    <Button 
+                      key={genre} 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-xs px-2 py-1 h-auto"
+                      onClick={() => {
+                        setSearchField('genre');
+                        setSearchQuery(genre);
+                        handleSearch();
+                      }}
+                    >
+                      {genre}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center space-x-1 ml-auto">
                 <span className="text-sm text-muted-foreground mr-2">Trending:</span>
                 {genres.slice(0, 3).map((topic) => (
@@ -474,16 +466,12 @@ export const BlockchainUI = () => {
                       </div>
                     </div>
                   
-                    <div className="flex space-x-2 pt-2">
-                      <Button size="sm" variant="outline" className="flex-1">
-                        <Zap className="w-4 h-4 mr-1" />
-                        View
-                      </Button>
-                      <Button size="sm" variant="outline" className="flex-1">
-                        <Shield className="w-4 h-4 mr-1" />
-                        Verify
-                      </Button>
-                    </div>
+                  <div className="flex space-x-2 pt-2">
+                    <Button size="sm" variant="outline" className="w-full">
+                      <Zap className="w-4 h-4 mr-1" />
+                      View
+                    </Button>
+                  </div>
                   </CardContent>
                 </Card>
               ))
