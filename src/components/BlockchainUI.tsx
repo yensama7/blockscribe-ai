@@ -1,9 +1,12 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/hooks/use-toast';
+import { api, ArchiveRecord } from '@/services/api';
 import { 
   Upload, 
   FileText, 
@@ -21,70 +24,117 @@ import {
   Users
 } from 'lucide-react';
 
-interface Document {
-  id: string;
-  title: string;
-  keywords: string[];
-  difficulty: string;
-  hash: string;
-  uploader: string;
-  summary: string;
-}
-
 export const BlockchainUI = () => {
+  const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchField, setSearchField] = useState('title');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
-  const [frequentlySearched] = useState([
-    'Machine Learning', 'Blockchain', 'Quantum Computing', 'AI Ethics', 'Cryptography'
-  ]);
+  // Fetch all metadata
+  const { data: allMetadata, isLoading: isLoadingMetadata } = useQuery({
+    queryKey: ['metadata'],
+    queryFn: api.getAllMetadata,
+  });
+
+  // Fetch genre analytics
+  const { data: genreData } = useQuery({
+    queryKey: ['genre-analytics'],
+    queryFn: api.getGenreAnalytics,
+  });
+
+  // Fetch difficulty analytics  
+  const { data: difficultyData } = useQuery({
+    queryKey: ['difficulty-analytics'],
+    queryFn: api.getDifficultyAnalytics,
+  });
+
+  // Parse metadata into documents
+  const recentDocuments: ArchiveRecord[] = allMetadata?.slice(0, 6).map(row => ({
+    id: parseInt(row[0]),
+    genre: row[1],
+    title: row[2],
+    difficulty: row[3],
+    summary: row[4],
+    file_hash: row[5].split('|')[0],
+    file_cid: row[5].split('|')[1],
+  })) || [];
+
+  // Extract genres from data
+  const genres = genreData ? Object.keys(genreData).slice(0, 5) : ['AI & ML', 'Blockchain', 'Quantum', 'Biology', 'Physics'];
   
-  const [recentDocuments] = useState<Document[]>([
-    {
-      id: '1',
-      title: 'Quantum Computing in Cryptography',
-      keywords: ['quantum', 'cryptography', 'security'],
-      difficulty: 'Advanced',
-      hash: '0x7d2a...f8e9',
-      uploader: '0x1234...5678',
-      summary: 'Comprehensive analysis of quantum computing applications in modern cryptographic systems.'
-    },
-    {
-      id: '2',
-      title: 'Machine Learning Fundamentals',
-      keywords: ['ML', 'neural networks', 'algorithms'],
-      difficulty: 'Intermediate',
-      hash: '0x9b3c...a1d2',
-      uploader: '0x9876...5432',
-      summary: 'Introduction to core concepts and practical applications of machine learning.'
-    },
-    {
-      id: '3',
-      title: 'Blockchain Consensus Mechanisms',
-      keywords: ['blockchain', 'consensus', 'proof-of-stake'],
-      difficulty: 'Advanced',
-      hash: '0x4e1f...c7b8',
-      uploader: '0x2468...1357',
-      summary: 'Deep dive into various blockchain consensus algorithms and their trade-offs.'
+  // Calculate stats from real data
+  const totalDocuments = allMetadata?.length || 0;
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
     }
-  ]);
+  };
 
   const handleUpload = async () => {
+    if (!selectedFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select a PDF file to upload",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(0);
     
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsUploading(false);
-          return 100;
-        }
-        return prev + 10;
+    try {
+      // Simulate progress while uploading
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => Math.min(prev + 10, 90));
+      }, 200);
+
+      const result = await api.uploadFile(selectedFile);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      toast({
+        title: "Upload successful!",
+        description: `File processed: ${result.metadata?.title || selectedFile.name}`,
       });
-    }, 200);
+      
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+        setSelectedFile(null);
+      }, 1000);
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload file",
+        variant: "destructive"
+      });
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    try {
+      const results = await api.searchByField(searchField, searchQuery);
+      toast({
+        title: "Search completed",
+        description: `Found ${results.length} results`,
+      });
+    } catch (error) {
+      toast({
+        title: "Search failed",
+        description: error instanceof Error ? error.message : "Failed to search",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -123,21 +173,34 @@ export const BlockchainUI = () => {
               </Button>
               <div className="flex items-center space-x-1">
                 <span className="text-sm text-muted-foreground mr-2">Genres:</span>
-                {['AI & ML', 'Blockchain', 'Quantum', 'Biology', 'Physics'].map((genre) => (
-                  <Button key={genre} variant="ghost" size="sm" className="text-xs px-2 py-1 h-auto">
+                {genres.map((genre) => (
+                  <Button 
+                    key={genre} 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-xs px-2 py-1 h-auto"
+                    onClick={() => {
+                      setSearchField('genre');
+                      setSearchQuery(genre);
+                      handleSearch();
+                    }}
+                  >
                     {genre}
                   </Button>
                 ))}
               </div>
               <div className="flex items-center space-x-1 ml-auto">
                 <span className="text-sm text-muted-foreground mr-2">Trending:</span>
-                {frequentlySearched.slice(0, 3).map((topic) => (
+                {genres.slice(0, 3).map((topic) => (
                   <Button
                     key={topic}
                     variant="ghost"
                     size="sm"
                     className="text-xs px-2 py-1 h-auto text-primary hover:text-primary"
-                    onClick={() => setSearchQuery(topic)}
+                    onClick={() => {
+                      setSearchField('genre');
+                      setSearchQuery(topic);
+                    }}
                   >
                     {topic}
                   </Button>
@@ -168,9 +231,13 @@ export const BlockchainUI = () => {
                 placeholder="Search academic papers, research topics, authors..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className="pl-12 pr-4 py-4 text-lg border-border/50 rounded-full bg-card/80 backdrop-blur-sm cyber-glow"
               />
-              <Button className="absolute right-2 top-1/2 transform -translate-y-1/2 rounded-full gradient-primary">
+              <Button 
+                onClick={handleSearch}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 rounded-full gradient-primary"
+              >
                 Search
               </Button>
             </div>
@@ -178,16 +245,22 @@ export const BlockchainUI = () => {
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
               <div className="text-center">
-                <div className="text-4xl font-bold text-primary mb-2">12,847</div>
+                <div className="text-4xl font-bold text-primary mb-2">
+                  {isLoadingMetadata ? '...' : totalDocuments.toLocaleString()}
+                </div>
                 <div className="text-muted-foreground">Documents Indexed</div>
               </div>
               <div className="text-center">
-                <div className="text-4xl font-bold text-accent mb-2">5,429</div>
-                <div className="text-muted-foreground">Active Researchers</div>
+                <div className="text-4xl font-bold text-accent mb-2">
+                  {genreData ? Object.keys(genreData).length : '...'}
+                </div>
+                <div className="text-muted-foreground">Research Genres</div>
               </div>
               <div className="text-center">
-                <div className="text-4xl font-bold text-primary mb-2">98.7%</div>
-                <div className="text-muted-foreground">Verification Rate</div>
+                <div className="text-4xl font-bold text-primary mb-2">
+                  {difficultyData ? Object.keys(difficultyData).length : '...'}
+                </div>
+                <div className="text-muted-foreground">Difficulty Levels</div>
               </div>
             </div>
           </div>
@@ -211,11 +284,36 @@ export const BlockchainUI = () => {
               <CardContent className="space-y-6">
                 <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-all hover:bg-primary/5">
                   <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-6" />
-                  <h3 className="text-xl font-semibold text-foreground mb-2">Drop your PDF here</h3>
+                  <h3 className="text-xl font-semibold text-foreground mb-2">
+                    {selectedFile ? selectedFile.name : 'Drop your PDF here'}
+                  </h3>
                   <p className="text-muted-foreground mb-6">or click to browse from your device</p>
-                  <Button onClick={handleUpload} disabled={isUploading} size="lg" className="gradient-primary px-8">
-                    {isUploading ? 'Processing...' : 'Select Document'}
-                  </Button>
+                  <input 
+                    type="file" 
+                    accept=".pdf"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  {selectedFile ? (
+                    <Button 
+                      onClick={handleUpload}
+                      disabled={isUploading} 
+                      size="lg" 
+                      className="gradient-primary px-8"
+                    >
+                      {isUploading ? 'Processing...' : 'Upload Document'}
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={() => document.getElementById('file-upload')?.click()}
+                      disabled={isUploading} 
+                      size="lg" 
+                      className="gradient-primary px-8"
+                    >
+                      Select Document
+                    </Button>
+                  )}
                 </div>
                 
                 {isUploading && (
@@ -272,12 +370,16 @@ export const BlockchainUI = () => {
           </div>
           
           <div className="flex flex-wrap justify-center gap-3 mb-12">
-            {frequentlySearched.map((topic) => (
+            {genres.slice(0, 5).map((topic) => (
               <Button
                 key={topic}
                 variant="outline"
                 className="border-border/50 bg-card/80 backdrop-blur-sm hover:cyber-glow transition-all"
-                onClick={() => setSearchQuery(topic)}
+                onClick={() => {
+                  setSearchField('genre');
+                  setSearchQuery(topic);
+                  handleSearch();
+                }}
               >
                 <Search className="w-4 h-4 mr-2" />
                 {topic}
@@ -287,20 +389,29 @@ export const BlockchainUI = () => {
 
           {/* Featured Categories */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { name: 'Artificial Intelligence', count: '2,847', icon: Brain, color: 'text-primary' },
-              { name: 'Blockchain & Crypto', count: '1,923', icon: Link, color: 'text-accent' },
-              { name: 'Quantum Computing', count: '987', icon: Zap, color: 'text-destructive' },
-              { name: 'Biotechnology', count: '1,456', icon: Star, color: 'text-primary' }
-            ].map((category) => (
-              <Card key={category.name} className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all cursor-pointer">
-                <CardContent className="p-6 text-center">
-                  <category.icon className={`w-8 h-8 ${category.color} mx-auto mb-3`} />
-                  <h3 className="font-semibold text-foreground mb-1">{category.name}</h3>
-                  <p className="text-sm text-muted-foreground">{category.count} papers</p>
-                </CardContent>
-              </Card>
-            ))}
+            {Object.entries(genreData || {}).slice(0, 4).map(([name, count], idx) => {
+              const icons = [Brain, Link, Zap, Star];
+              const colors = ['text-primary', 'text-accent', 'text-destructive', 'text-primary'];
+              const Icon = icons[idx % icons.length];
+              
+              return (
+                <Card 
+                  key={name} 
+                  className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all cursor-pointer"
+                  onClick={() => {
+                    setSearchField('genre');
+                    setSearchQuery(name);
+                    handleSearch();
+                  }}
+                >
+                  <CardContent className="p-6 text-center">
+                    <Icon className={`w-8 h-8 ${colors[idx % colors.length]} mx-auto mb-3`} />
+                    <h3 className="font-semibold text-foreground mb-1">{name}</h3>
+                    <p className="text-sm text-muted-foreground">{String(count)} papers</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -319,61 +430,64 @@ export const BlockchainUI = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {recentDocuments.map((doc) => (
-              <Card key={doc.id} className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all group cursor-pointer">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg group-hover:text-primary transition-colors">{doc.title}</CardTitle>
-                      <CardDescription className="mt-2">{doc.summary}</CardDescription>
-                    </div>
-                    <Badge 
-                      variant={doc.difficulty === 'Advanced' ? 'destructive' : 
-                              doc.difficulty === 'Intermediate' ? 'default' : 'secondary'}
-                      className="ml-2"
-                    >
-                      {doc.difficulty}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    {doc.keywords.slice(0, 3).map((keyword) => (
-                      <Badge key={keyword} variant="outline" className="text-xs">
-                        {keyword}
+            {isLoadingMetadata ? (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                Loading documents...
+              </div>
+            ) : recentDocuments.length === 0 ? (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                No documents found. Upload your first research paper!
+              </div>
+            ) : (
+              recentDocuments.map((doc) => (
+                <Card key={doc.id} className="border-border/50 backdrop-blur-sm bg-card/80 hover:cyber-glow transition-all group cursor-pointer">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg group-hover:text-primary transition-colors">{doc.title}</CardTitle>
+                        <CardDescription className="mt-2">{doc.summary}</CardDescription>
+                      </div>
+                      <Badge 
+                        variant={doc.difficulty.toLowerCase().includes('advanced') ? 'destructive' : 
+                                doc.difficulty.toLowerCase().includes('intermediate') ? 'default' : 'secondary'}
+                        className="ml-2"
+                      >
+                        {doc.difficulty}
                       </Badge>
-                    ))}
-                    {doc.keywords.length > 3 && (
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-wrap gap-2">
                       <Badge variant="outline" className="text-xs">
-                        +{doc.keywords.length - 3} more
+                        {doc.genre}
                       </Badge>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Hash:</span>
-                      <span className="font-mono text-primary">{doc.hash}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Author:</span>
-                      <span className="font-mono text-accent">{doc.uploader}</span>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Hash:</span>
+                        <span className="font-mono text-primary text-xs">{doc.file_hash.slice(0, 12)}...</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">CID:</span>
+                        <span className="font-mono text-accent text-xs">{doc.file_cid.slice(0, 12)}...</span>
+                      </div>
                     </div>
-                  </div>
                   
-                  <div className="flex space-x-2 pt-2">
-                    <Button size="sm" variant="outline" className="flex-1">
-                      <Zap className="w-4 h-4 mr-1" />
-                      View
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1">
-                      <Shield className="w-4 h-4 mr-1" />
-                      Verify
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="flex space-x-2 pt-2">
+                      <Button size="sm" variant="outline" className="flex-1">
+                        <Zap className="w-4 h-4 mr-1" />
+                        View
+                      </Button>
+                      <Button size="sm" variant="outline" className="flex-1">
+                        <Shield className="w-4 h-4 mr-1" />
+                        Verify
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
 
           <div className="text-center mt-12">
