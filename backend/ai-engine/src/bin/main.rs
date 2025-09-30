@@ -1,7 +1,8 @@
 // main.rs: This is the server (should've probably called it server.rs lmao)
 
 // server stuff
-use actix_web::{post, get, web, App, HttpResponse, HttpServer, Responder, Error};
+use actix_web::{post, get, web, http, App, HttpResponse, HttpServer, Responder, Error};
+use actix_cors::Cors;
 use serde::{Serialize, Deserialize};
 use reqwest::Client;
 use serde_json::Value;
@@ -418,7 +419,19 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
 async fn main() -> std::io::Result<()>{
 
     HttpServer::new(|| {
+        let cors = Cors::default()
+            .allowed_origin("http://localhost:8080") // Vite dev server origin
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+            .allowed_headers(vec![
+                http::header::CONTENT_TYPE,
+                http::header::ACCEPT,
+                http::header::AUTHORIZATION,
+            ])
+            .supports_credentials() // only if your frontend needs cookies/auth
+            .max_age(3600);
+
         App::new()
+            .wrap(cors) // <- apply CORS middleware
             .service(search)
             .service(difficulty)
             .service(genre)
