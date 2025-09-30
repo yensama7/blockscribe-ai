@@ -31,39 +31,82 @@ export const BlockchainUI = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   // Fetch all metadata
-  const { data: allMetadata, isLoading: isLoadingMetadata } = useQuery({
+  const { data: allMetadata, isLoading: isLoadingMetadata, error: metadataError } = useQuery({
     queryKey: ['metadata'],
-    queryFn: api.getAllMetadata,
+    queryFn: async () => {
+      console.log('Fetching metadata from API...');
+      try {
+        const data = await api.getAllMetadata();
+        console.log('Metadata fetched successfully:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching metadata:', error);
+        throw error;
+      }
+    },
+    retry: false,
   });
 
   // Fetch genre analytics
-  const { data: genreData } = useQuery({
+  const { data: genreData, error: genreError } = useQuery({
     queryKey: ['genre-analytics'],
-    queryFn: api.getGenreAnalytics,
+    queryFn: async () => {
+      console.log('Fetching genre analytics from API...');
+      try {
+        const data = await api.getGenreAnalytics();
+        console.log('Genre analytics fetched successfully:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching genre analytics:', error);
+        throw error;
+      }
+    },
+    retry: false,
   });
 
   // Fetch difficulty analytics  
-  const { data: difficultyData } = useQuery({
+  const { data: difficultyData, error: difficultyError } = useQuery({
     queryKey: ['difficulty-analytics'],
-    queryFn: api.getDifficultyAnalytics,
+    queryFn: async () => {
+      console.log('Fetching difficulty analytics from API...');
+      try {
+        const data = await api.getDifficultyAnalytics();
+        console.log('Difficulty analytics fetched successfully:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching difficulty analytics:', error);
+        throw error;
+      }
+    },
+    retry: false,
   });
 
   // Parse metadata into documents
-  const recentDocuments: ArchiveRecord[] = allMetadata?.slice(0, 6).map(row => ({
-    id: parseInt(row[0]),
-    genre: row[1],
-    title: row[2],
-    difficulty: row[3],
-    summary: row[4],
-    file_hash: row[5].split('|')[0],
-    file_cid: row[5].split('|')[1],
-  })) || [];
+  const recentDocuments: ArchiveRecord[] = allMetadata?.slice(0, 6).map(row => {
+    console.log('Parsing document row:', row);
+    return {
+      id: parseInt(row[0]),
+      genre: row[1],
+      title: row[2],
+      difficulty: row[3],
+      summary: row[4],
+      file_hash: row[5]?.split('|')[0] || '',
+      file_cid: row[5]?.split('|')[1] || '',
+    };
+  }) || [];
 
   // Extract genres from data
   const genres = genreData ? Object.keys(genreData) : [];
+  console.log('Available genres:', genres);
   
   // Calculate stats from real data
   const totalDocuments = allMetadata?.length || 0;
+  console.log('Total documents:', totalDocuments);
+
+  // Log any errors
+  if (metadataError) console.error('Metadata error:', metadataError);
+  if (genreError) console.error('Genre error:', genreError);
+  if (difficultyError) console.error('Difficulty error:', difficultyError);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,6 +125,7 @@ export const BlockchainUI = () => {
       return;
     }
 
+    console.log('Starting upload for file:', selectedFile.name);
     setIsUploading(true);
     setUploadProgress(0);
     
@@ -91,7 +135,9 @@ export const BlockchainUI = () => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
+      console.log('Calling API upload endpoint...');
       const result = await api.uploadFile(selectedFile);
+      console.log('Upload successful:', result);
       
       clearInterval(progressInterval);
       setUploadProgress(100);
@@ -107,6 +153,7 @@ export const BlockchainUI = () => {
         setSelectedFile(null);
       }, 1000);
     } catch (error) {
+      console.error('Upload error:', error);
       toast({
         title: "Upload failed",
         description: error instanceof Error ? error.message : "Failed to upload file",
@@ -120,13 +167,16 @@ export const BlockchainUI = () => {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     
+    console.log('Searching:', { field: searchField, query: searchQuery });
     try {
       const results = await api.searchByField(searchField, searchQuery);
+      console.log('Search results:', results);
       toast({
         title: "Search completed",
         description: `Found ${results.length} results`,
       });
     } catch (error) {
+      console.error('Search error:', error);
       toast({
         title: "Search failed",
         description: error instanceof Error ? error.message : "Failed to search",
@@ -134,6 +184,11 @@ export const BlockchainUI = () => {
       });
     }
   };
+
+  // Show error state if API is not available
+  if (metadataError || genreError || difficultyError) {
+    console.warn('API connection issues detected. Backend may not be running.');
+  }
 
   return (
     <div className="min-h-screen bg-background neural-network">
