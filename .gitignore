@@ -29,3 +29,4 @@ backend/test-ledger
 
 # .env files
 backend/ai-engine/src/nlp/.env
+backend/ai-engine/src/vectored/require/

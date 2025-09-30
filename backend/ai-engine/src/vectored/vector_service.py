@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import uvicorn
 
 # import your previous functions
-from vectordb_pipeline import query_records, difficulty_distribution, genre_distribution, cluster_records
+from utils import query_records, difficulty_distribution, genre_distribution, cluster_records
 
 app = FastAPI()
 

@@ -100,13 +100,13 @@ async fn list_all() -> impl Responder {
         let mut out = Vec::new();
         while let Some(row) = rows.next()? {
             let id: i64 = row.get(0)?;
-            let genre: String = row.get(1)?;
+            let genre_val: String = row.get(1)?;
             let title: String = row.get(2)?;
-            let difficulty: String = row.get(3)?;
+            let difficulty_val: String = row.get(3)?;
             let summary: String = row.get(4)?;
             let file_hash: String = row.get(5)?;
             let file_cid: String = row.get(6)?;
-            out.push((id.to_string(), genre, title, difficulty, summary, format!("{}|{}", file_hash, file_cid)));
+            out.push((id.to_string(), genre_val, title, difficulty_val, summary, format!("{}|{}", file_hash, file_cid)));
         }
         Ok(out)
     })
@@ -252,7 +252,8 @@ async fn genre() -> impl Responder {
 #[get("/analytics/clusters")]
 async fn clusters(query: web::Query<std::collections::HashMap<String, String>>) -> impl Responder {
     let client = Client::new();
-    let n = query.get("n").unwrap_or(&"3".to_string()); // default to 3 clusters
+    let default_n = "3".to_string();
+    let n = query.get("n").unwrap_or(&default_n); // default to 3 clusters
     let url = format!("http://127.0.0.1:8001/analytics/clusters?n={}", n);
 
     match client.get(&url).send().await {
@@ -264,7 +265,7 @@ async fn clusters(query: web::Query<std::collections::HashMap<String, String>>) 
     }
 }
 #[post("/ai-search")]
-async fn search(payload: web::Json<SearchRequest>) -> impl Responder {
+async fn search(payload: web::Json<VectorSearchRequest>) -> impl Responder {
     let client = Client::new();
     let url = "http://127.0.0.1:8001/search"; // Python FastAPI endpoint
 
@@ -275,7 +276,7 @@ async fn search(payload: web::Json<SearchRequest>) -> impl Responder {
 
     match client.post(url).json(&body).send().await {
         Ok(resp) => {
-            if let Ok(json) = resp.json::<SearchResult>().await {
+            if let Ok(json) = resp.json::<VectorSearchResult>().await {
                 HttpResponse::Ok().json(json)
             } else {
                 HttpResponse::InternalServerError().body("Invalid response from vector service")
