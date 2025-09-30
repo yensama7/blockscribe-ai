@@ -47,6 +47,7 @@ solana-sdk = { version = "3.0.0", features = ["full"] }
 
 # server
 actix-web = "4"
+actix-cors = "0.6"
 actix-multipart = "0.6"
 futures-util = "0.3"
 sanitize-filename = "0.5"
