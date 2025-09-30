@@ -49,10 +49,10 @@ We provide a single script to bring up all services:
 - Rust Actix-Web server  
 - React Vite frontend (port 8080)  
 
-From the `repo/backend/` directory:
+From the `blockscribe-ai/backend/` directory:
 
 ```bash
-cd repo/backend
+cd blockscribe-ai/backend
 chmod +x run_server.sh
 ./run_server.sh
 ```
@@ -83,7 +83,7 @@ chmod +x run_server.sh
 
 #### Development Notes
 
-- Logs are written to the `repo/backend/` directory:
+- Logs are written to the `blockscribe-ai/backend/` directory:
   - `ipfs.log`
   - `solana.log`
   - `vector_service.log`
