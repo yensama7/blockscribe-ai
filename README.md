@@ -81,6 +81,8 @@ chmod +x run_server.sh
 
 ---
 
+#### Note: The ipfs daemon and solana test validator have to be installed on the  machine
+
 #### Development Notes
 
 - Logs are written to the `blockscribe-ai/backend/` directory:
