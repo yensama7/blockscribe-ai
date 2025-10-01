@@ -16,6 +16,7 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+
 .DS_Store
 *.suo
 *.ntvs*
@@ -28,6 +29,8 @@ backend/ai-engine/target
 backend/test-ledger
 
 # .env files
+backend/docs
 backend/ai-engine/src/nlp/.env
+backend/ai-engine/.venv
 backend/ai-engine/src/vectored/require/
 backend/ai-engine/src/vectored/__pycache__/
