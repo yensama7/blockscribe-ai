@@ -18,7 +18,7 @@ VECTORED_DIR="$BACKEND_DIR/ai-engine/src/vectored"
 VECTORED_PY="${VECTORED_DIR}/vector_service.py"
 REQ_FILE="${VECTORED_DIR}/requirements.txt"
 VENV_DIR="$BACKEND_DIR/ai-engine/.venv"
-CARGO_PROJECT_DIR="$BACKEND_DIR/rust-server"
+CARGO_PROJECT_DIR="$BACKEND_DIR/ai-engine/src/bin"
 
 # --- Cleanup ---
 cleanup() {
@@ -60,14 +60,23 @@ echo "    ✅ IPFS ready"
 
 # --- Start Solana validator ---
 echo "[*] Starting Solana test validator..."
-nohup solana-test-validator >"$SOLANA_LOG" 2>&1 &
-echo "    Solana running (log: $SOLANA_LOG)"
 
+# Check if a solana-test-validator process is already running
+if pgrep -x "solana-test-validator" >/dev/null 2>&1; then
+    echo "    Solana validator already running. Reusing existing instance."
+else
+    nohup solana-test-validator >"$SOLANA_LOG" 2>&1 &
+    echo "    Solana started (log: $SOLANA_LOG)"
+fi
+
+# Wait until validator is ready
 until solana cluster-version >/dev/null 2>&1; do
     echo "    Waiting for Solana validator to be ready..."
     sleep 2
 done
+
 echo "    ✅ Solana ready"
+
 
 # --- Python virtual environment setup ---
 if [[ ! -d "$VENV_DIR" ]]; then
