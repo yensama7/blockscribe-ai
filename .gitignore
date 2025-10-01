@@ -27,6 +27,8 @@ dist-ssr
 # backend output binary
 backend/ai-engine/target
 backend/test-ledger
+backend/ai-engine/uploads
+
 
 # .env files
 backend/docs
