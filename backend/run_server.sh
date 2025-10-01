@@ -12,8 +12,8 @@ TAIL_PID=""
 
 # Paths
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-FRONTEND_DIR="$REPO_ROOT/repo"
-BACKEND_DIR="$REPO_ROOT/repo/backend"
+FRONTEND_DIR="$REPO_ROOT/blockscribe-ai"
+BACKEND_DIR="$REPO_ROOT/blockscribe-ai/backend"
 VECTORED_DIR="$BACKEND_DIR/ai-engine/src/vectored"
 VECTORED_PY="${VECTORED_DIR}/vector_service.py"
 REQ_FILE="${VECTORED_DIR}/requirements.txt"
