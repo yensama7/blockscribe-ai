@@ -125,10 +125,10 @@ async fn list_all() -> impl Responder {
 
 #[get("/search")]
 async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Responder {
-    let Some(field) = query.get("field").map(|f| f.as_str()) else {
+    let Some(field) = query.get("field").cloned() else {
         return HttpResponse::BadRequest().body("missing 'field' query param");
     };
-    let Some(q) = query.get("q") else {
+    let Some(q) = query.get("q").cloned() else {
         return HttpResponse::BadRequest().body("missing 'q' query param");
     };
 
@@ -145,7 +145,7 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
     .copied()
     .collect();
 
-    if !allowed.contains(field) {
+    if !allowed.contains(field.as_str()) {
         return HttpResponse::BadRequest().body(format!("field '{}' is not searchable", field));
     }
 
@@ -178,7 +178,7 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
 
         let records: Vec<ArchiveRecord> = rows.flatten().collect();
 
-        if field == "title" {
+        if field.as_str() == "title" {
             for record in &records {
                 let _ = conn.execute(
                     "UPDATE archive SET search_count = COALESCE(search_count, 0) + 1 WHERE id = ?1",

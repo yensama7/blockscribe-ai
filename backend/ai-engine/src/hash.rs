@@ -1,7 +1,7 @@
 use sha2::{Sha256, Digest};
 use std::path::Path;
 use tokio::fs;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 
 
 // basic hash function

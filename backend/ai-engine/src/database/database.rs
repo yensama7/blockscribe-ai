@@ -48,11 +48,11 @@ pub fn add_to_or_create_database(
 
     conn.execute(
         "INSERT OR REPLACE INTO archive
-        (id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature)
-        VALUES (
+         (id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature)
+         VALUES (
             (SELECT id FROM archive WHERE file_hash = ?5),
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
-        )",
+         )",
         (
             &metadata.genre,
             &metadata.title,
