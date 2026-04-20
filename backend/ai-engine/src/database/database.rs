@@ -1,20 +1,7 @@
-// database.rs: Utilty functions for database integration and handling
-
+use crate::nlp::engine::{ExtractedMetaData, FileRecord};
 use rusqlite::{Connection, Result};
-use crate::nlp::engine::ExtractedMetaData;
-use crate::nlp::engine::FileRecord;
 
-// because of our lord and saviour: thoughtful developers we can write one function that does both:
-// 1. creating the database
-// 2. adding to the database
-
-
-// please don't get angry at my naming conventions lmao ;)
-pub fn add_to_or_create_database(metadata: &ExtractedMetaData, hash: &FileRecord, database_name: String) -> Result<(), Box<dyn std::error::Error>> {
-    let conn = Connection::open(database_name)?;
-
-
-    // if we dont have a database active; create one
+fn ensure_archive_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS archive (
             id INTEGER PRIMARY KEY,
@@ -23,16 +10,49 @@ pub fn add_to_or_create_database(metadata: &ExtractedMetaData, hash: &FileRecord
             difficulty TEXT NOT NULL,
             summary TEXT NOT NULL,
             file_hash TEXT NOT NULL,
-            file_cid TEXT NOT NULL
+            file_cid TEXT NOT NULL,
+            uploader_wallet TEXT,
+            solana_signature TEXT,
+            access_type TEXT NOT NULL DEFAULT 'open',
+            publish_fee_lamports INTEGER NOT NULL DEFAULT 1000,
+            search_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
         (),
     )?;
 
-    // Always insert a new row (duplicates allowed)
     conn.execute(
-        "INSERT INTO archive
-         (genre, title, difficulty, summary, file_hash, file_cid)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_archive_file_hash ON archive(file_hash)",
+        (),
+    )?;
+
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN uploader_wallet TEXT", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN solana_signature TEXT", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN access_type TEXT NOT NULL DEFAULT 'open'", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN publish_fee_lamports INTEGER NOT NULL DEFAULT 1000", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN search_count INTEGER NOT NULL DEFAULT 0", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", ());
+
+    Ok(())
+}
+
+pub fn add_to_or_create_database(
+    metadata: &ExtractedMetaData,
+    hash: &FileRecord,
+    uploader_wallet: &str,
+    solana_signature: &str,
+    database_name: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let conn = Connection::open(database_name)?;
+    ensure_archive_schema(&conn)?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO archive
+         (id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature)
+         VALUES (
+            (SELECT id FROM archive WHERE file_hash = ?5),
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+         )",
         (
             &metadata.genre,
             &metadata.title,
@@ -40,17 +60,10 @@ pub fn add_to_or_create_database(metadata: &ExtractedMetaData, hash: &FileRecord
             &metadata.summary,
             &hash.file_hash,
             &hash.file_cid,
+            uploader_wallet,
+            solana_signature,
         ),
     )?;
-    println!("Inserted new record.");
-
-    // List all genres currently stored
-    let mut stmt = conn.prepare("SELECT genre FROM archive")?;
-    let genres_iter = stmt.query_map([], |row| row.get::<_, String>(0))?;
-    println!("All genres in DB:");
-    for g in genres_iter {
-        println!("  - {}", g?);
-    }
 
     Ok(())
 }
