@@ -12,7 +12,11 @@ fn ensure_archive_schema(conn: &Connection) -> Result<()> {
             file_hash TEXT NOT NULL,
             file_cid TEXT NOT NULL,
             uploader_wallet TEXT,
-            solana_signature TEXT
+            solana_signature TEXT,
+            access_type TEXT NOT NULL DEFAULT 'open',
+            publish_fee_lamports INTEGER NOT NULL DEFAULT 1000,
+            search_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
         (),
     )?;
@@ -24,6 +28,10 @@ fn ensure_archive_schema(conn: &Connection) -> Result<()> {
 
     let _ = conn.execute("ALTER TABLE archive ADD COLUMN uploader_wallet TEXT", ());
     let _ = conn.execute("ALTER TABLE archive ADD COLUMN solana_signature TEXT", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN access_type TEXT NOT NULL DEFAULT 'open'", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN publish_fee_lamports INTEGER NOT NULL DEFAULT 1000", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN search_count INTEGER NOT NULL DEFAULT 0", ());
+    let _ = conn.execute("ALTER TABLE archive ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", ());
 
     Ok(())
 }
@@ -40,11 +48,11 @@ pub fn add_to_or_create_database(
 
     conn.execute(
         "INSERT OR REPLACE INTO archive
-         (id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature)
-         VALUES (
+        (id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature)
+        VALUES (
             (SELECT id FROM archive WHERE file_hash = ?5),
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
-         )",
+        )",
         (
             &metadata.genre,
             &metadata.title,

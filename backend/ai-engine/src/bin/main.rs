@@ -3,7 +3,7 @@ use actix_multipart::Multipart;
 use actix_web::{get, http, post, web, App, Error, HttpResponse, HttpServer, Responder};
 use futures_util::StreamExt;
 use reqwest::Client;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use sanitize_filename::sanitize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,6 +32,17 @@ pub struct ArchiveRecord {
     file_cid: String,
     uploader_wallet: Option<String>,
     solana_signature: Option<String>,
+    access_type: String,
+    publish_fee_lamports: i64,
+    search_count: i64,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LibraryHighlightsResponse {
+    top_searched: Vec<ArchiveRecord>,
+    recent: Vec<ArchiveRecord>,
+    random: Vec<ArchiveRecord>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,7 +92,7 @@ async fn list_all() -> impl Responder {
     let res = web::block(move || -> Result<Vec<Vec<String>>, anyhow::Error> {
         let conn = Connection::open(DB_NAME)?;
         let mut stmt = conn.prepare(
-            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, '') FROM archive ORDER BY id DESC",
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive ORDER BY id DESC",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -94,6 +105,10 @@ async fn list_all() -> impl Responder {
                 format!("{}|{}", row.get::<_, String>(5)?, row.get::<_, String>(6)?),
                 row.get(7)?,
                 row.get(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, i64>(10)?.to_string(),
+                row.get::<_, i64>(11)?.to_string(),
+                row.get::<_, String>(12)?,
             ])
         })?;
 
@@ -136,7 +151,7 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
 
     let pattern = format!("%{}%", q);
     let sql = format!(
-        "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature FROM archive WHERE {} LIKE ?1 ORDER BY id DESC",
+        "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE {} LIKE ?1 ORDER BY id DESC",
         field
     );
 
@@ -154,9 +169,25 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
                 file_cid: row.get(6)?,
                 uploader_wallet: row.get(7).ok(),
                 solana_signature: row.get(8).ok(),
+                access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
+                publish_fee_lamports: row.get(10).unwrap_or(1000),
+                search_count: row.get(11).unwrap_or(0),
+                created_at: row.get(12).unwrap_or_default(),
             })
         })?;
-        Ok(rows.flatten().collect())
+
+        let records: Vec<ArchiveRecord> = rows.flatten().collect();
+
+        if field == "title" {
+            for record in &records {
+                let _ = conn.execute(
+                    "UPDATE archive SET search_count = COALESCE(search_count, 0) + 1 WHERE id = ?1",
+                    params![record.id],
+                );
+            }
+        }
+
+        Ok(records)
     })
     .await;
 
@@ -176,7 +207,7 @@ async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Res
     let res = web::block(move || -> Result<Option<ArchiveRecord>, rusqlite::Error> {
         let conn = Connection::open(DB_NAME)?;
         let mut stmt = conn.prepare(
-            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature FROM archive WHERE file_hash = ?1 LIMIT 1",
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE file_hash = ?1 LIMIT 1",
         )?;
 
         let mut rows = stmt.query([hash])?;
@@ -191,6 +222,10 @@ async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Res
                 file_cid: row.get(6)?,
                 uploader_wallet: row.get(7).ok(),
                 solana_signature: row.get(8).ok(),
+                access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
+                publish_fee_lamports: row.get(10).unwrap_or(1000),
+                search_count: row.get(11).unwrap_or(0),
+                created_at: row.get(12).unwrap_or_default(),
             }));
         }
 
@@ -224,19 +259,15 @@ async fn settle_download_fee(payload: web::Json<DownloadFeeRequest>) -> impl Res
 
     let res = web::block(move || -> Result<Option<String>, rusqlite::Error> {
         let conn = Connection::open(DB_NAME)?;
-        conn.query_row(
-            "SELECT uploader_wallet FROM archive WHERE id = ?1",
-            params![record_id],
-            |row| row.get::<_, Option<String>>(0),
-        )
-        .map(Some)
-        .or_else(|e| {
-            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
-                Ok(None)
-            } else {
-                Err(e)
-            }
-        })
+        let wallet = conn
+            .query_row(
+                "SELECT uploader_wallet FROM archive WHERE id = ?1",
+                params![record_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?;
+
+        Ok(wallet.flatten())
     })
     .await;
 
@@ -257,6 +288,51 @@ async fn settle_download_fee(payload: web::Json<DownloadFeeRequest>) -> impl Res
                 developer_wallet,
             })
         }
+        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("DB error: {}", e)),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)),
+    }
+}
+
+
+#[get("/library/highlights")]
+async fn library_highlights() -> impl Responder {
+    let res = web::block(move || -> Result<LibraryHighlightsResponse, rusqlite::Error> {
+        let conn = Connection::open(DB_NAME)?;
+
+        let fetch_records = |query: &str| -> Result<Vec<ArchiveRecord>, rusqlite::Error> {
+            let mut stmt = conn.prepare(query)?;
+            let rows = stmt.query_map([], |row| {
+                Ok(ArchiveRecord {
+                    id: row.get(0)?,
+                    genre: row.get(1)?,
+                    title: row.get(2)?,
+                    difficulty: row.get(3)?,
+                    summary: row.get(4)?,
+                    file_hash: row.get(5)?,
+                    file_cid: row.get(6)?,
+                    uploader_wallet: row.get(7).ok(),
+                    solana_signature: row.get(8).ok(),
+                    access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
+                    publish_fee_lamports: row.get(10).unwrap_or(1000),
+                    search_count: row.get(11).unwrap_or(0),
+                    created_at: row.get(12).unwrap_or_default(),
+                })
+            })?;
+            Ok(rows.flatten().collect())
+        };
+
+        let base = "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive";
+
+        let top_searched = fetch_records(&format!("{} ORDER BY search_count DESC, id DESC LIMIT 15", base))?;
+        let recent = fetch_records(&format!("{} ORDER BY id DESC LIMIT 10", base))?;
+        let random = fetch_records(&format!("{} ORDER BY RANDOM() LIMIT 5", base))?;
+
+        Ok(LibraryHighlightsResponse { top_searched, recent, random })
+    })
+    .await;
+
+    match res {
+        Ok(Ok(payload)) => HttpResponse::Ok().json(payload),
         Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("DB error: {}", e)),
         Err(e) => HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)),
     }
@@ -323,6 +399,8 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     let _ = std::fs::create_dir_all("./uploads");
 
     let mut wallet_address: Option<String> = None;
+    let mut access_type: String = "open".to_string();
+    let mut publish_fee_lamports: i64 = 1000;
     let mut uploaded_file_path: Option<String> = None;
     let mut original_filename_opt: Option<String> = None;
 
@@ -332,7 +410,7 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
         })?;
 
         let field_name = field.name().to_string();
-        if field_name == "wallet_address" {
+        if field_name == "wallet_address" || field_name == "access_type" || field_name == "publish_fee_lamports" {
             let mut bytes = Vec::new();
             while let Some(chunk_res) = field.next().await {
                 let chunk = chunk_res.map_err(|e| {
@@ -340,7 +418,15 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
                 })?;
                 bytes.extend_from_slice(&chunk);
             }
-            wallet_address = Some(String::from_utf8_lossy(&bytes).trim().to_string());
+
+            let value = String::from_utf8_lossy(&bytes).trim().to_string();
+            if field_name == "wallet_address" {
+                wallet_address = Some(value);
+            } else if field_name == "access_type" {
+                access_type = if value.eq_ignore_ascii_case("restricted") { "restricted".to_string() } else { "open".to_string() };
+            } else if field_name == "publish_fee_lamports" {
+                publish_fee_lamports = value.parse::<i64>().unwrap_or(1000).max(0);
+            }
             continue;
         }
 
@@ -429,14 +515,25 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     .await;
 
     match db_res {
-        Ok(Ok(_)) => Ok(HttpResponse::Ok().json(serde_json::json!({
-            "status": "success",
-            "original_filename": original_filename_opt,
-            "metadata": metadata,
-            "file_record": file_record,
-            "solana_signature": memo_sig,
-            "uploader_wallet": uploader_wallet
-        }))),
+        Ok(Ok(_)) => {
+            let _ = Connection::open(DB_NAME).and_then(|conn| {
+                conn.execute(
+                    "UPDATE archive SET access_type = ?1, publish_fee_lamports = ?2, created_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE file_hash = ?3",
+                    params![access_type, publish_fee_lamports, file_record.file_hash.clone()],
+                )
+            });
+
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "status": "success",
+                "original_filename": original_filename_opt,
+                "metadata": metadata,
+                "file_record": file_record,
+                "solana_signature": memo_sig,
+                "uploader_wallet": uploader_wallet,
+                "access_type": access_type,
+                "publish_fee_lamports": publish_fee_lamports
+            })))
+        },
         Ok(Err(e)) => Ok(HttpResponse::InternalServerError().body(format!("Database insertion failed: {}", e))),
         Err(join_err) => Ok(HttpResponse::InternalServerError().body(format!("Database thread join error: {}", join_err))),
     }
@@ -463,6 +560,7 @@ async fn main() -> std::io::Result<()> {
             .service(search_by_field)
             .service(integrity_check)
             .service(settle_download_fee)
+            .service(library_highlights)
             .service(search)
             .service(difficulty)
             .service(genre)

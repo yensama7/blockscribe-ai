@@ -10,6 +10,10 @@ export interface ArchiveRecord {
   file_cid: string;
   uploader_wallet?: string;
   solana_signature?: string;
+  access_type?: string;
+  publish_fee_lamports?: number;
+  search_count?: number;
+  created_at?: string;
 }
 
 interface UploadResponse {
@@ -18,6 +22,8 @@ interface UploadResponse {
   file_record: { file_hash: string; file_cid: string };
   solana_signature: string;
   uploader_wallet: string;
+  access_type: string;
+  publish_fee_lamports: number;
 }
 
 export interface IntegrityCheckResult {
@@ -33,6 +39,12 @@ export interface DownloadFeePlan {
   amount_lamports_developer: number;
   uploader_wallet?: string;
   developer_wallet: string;
+}
+
+export interface LibraryHighlights {
+  top_searched: ArchiveRecord[];
+  recent: ArchiveRecord[];
+  random: ArchiveRecord[];
 }
 
 const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -58,6 +70,10 @@ const normalizeMetadataRows = (rows: string[][]): ArchiveRecord[] =>
       file_cid: fileCid,
       uploader_wallet: row[6] || undefined,
       solana_signature: row[7] || undefined,
+      access_type: row[8] || 'open',
+      publish_fee_lamports: Number(row[9] || 1000),
+      search_count: Number(row[10] || 0),
+      created_at: row[11] || undefined,
     };
   });
 
@@ -67,9 +83,21 @@ export const api = {
     return normalizeMetadataRows(rows);
   },
 
-  uploadFile: async (file: File, walletAddress: string): Promise<UploadResponse> => {
+  getLibraryHighlights: async (): Promise<LibraryHighlights> => fetchJson<LibraryHighlights>('/library/highlights'),
+
+  searchByTitle: async (query: string): Promise<ArchiveRecord[]> =>
+    fetchJson<ArchiveRecord[]>(`/search?field=title&q=${encodeURIComponent(query)}`),
+
+  uploadFile: async (
+    file: File,
+    walletAddress: string,
+    accessType: 'open' | 'restricted',
+    publishFeeLamports: number,
+  ): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('wallet_address', walletAddress);
+    formData.append('access_type', accessType);
+    formData.append('publish_fee_lamports', String(publishFeeLamports));
     formData.append('file', file);
 
     const response = await fetch(`${API_BASE_URL}/api/upload`, {
