@@ -33,6 +33,7 @@ backend/ai-engine/uploads
 # .env files
 backend/docs
 backend/ai-engine/src/nlp/.env
+backend/ai-engine/src/solana/.env
 backend/ai-engine/.venv
 backend/ai-engine/src/vectored/require/
 backend/ai-engine/src/vectored/__pycache__/

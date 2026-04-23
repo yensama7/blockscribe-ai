@@ -65,6 +65,10 @@ This starts:
 ## Devnet mode (optional for Solana integration testing)
 
 The backend memo writer defaults to devnet if `SOLANA_RPC_URL` is not set, but `run_server.sh` defaults `SOLANA_RPC_URL` to local validator (`http://127.0.0.1:8899`) so local full-stack startup works out of the box.
+## Devnet mode (optional for Solana integration testing)
+
+The backend memo writer defaults to devnet if `SOLANA_RPC_URL` is not set, but `run_server.sh` defaults `SOLANA_RPC_URL` to local validator (`http://127.0.0.1:8899`) so local full-stack startup works out of the box.
+
 
 Run with devnet:
 
