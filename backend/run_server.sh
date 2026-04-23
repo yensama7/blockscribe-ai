@@ -42,7 +42,7 @@ until ipfs id >/dev/null 2>&1; do
 done
 echo "    ✅ IPFS ready"
 
-SOLANA_RPC_URL="${SOLANA_RPC_URL:-https://api.devnet.solana.com}"
+SOLANA_RPC_URL="${SOLANA_RPC_URL:-http://127.0.0.1:8899}"
 
 if [[ "$SOLANA_RPC_URL" == "http://localhost:8899" || "$SOLANA_RPC_URL" == "http://127.0.0.1:8899" ]]; then
     echo "[*] Starting Solana test validator..."
