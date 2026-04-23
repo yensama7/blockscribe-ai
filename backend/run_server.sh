@@ -16,6 +16,7 @@ VECTORED_PY="$VECTORED_DIR/vector_service.py"
 REQ_FILE="$VECTORED_DIR/requirements.txt"
 VENV_DIR="$BACKEND_DIR/ai-engine/.venv"
 CARGO_MANIFEST="$BACKEND_DIR/ai-engine/cargo.toml"
+FRONTEND_PORT="${FRONTEND_PORT:-8081}"
 
 cleanup() {
     echo "[*] Stopping services..."
@@ -23,7 +24,7 @@ cleanup() {
     pkill -f "solana-test-validator" || true
     pkill -f "vector_service.py" || true
     pkill -f "cargo run --manifest-path $CARGO_MANIFEST" || true
-    pkill -f "vite --host 0.0.0.0 --port 8080" || true
+    pkill -f "vite --host 0.0.0.0 --port $FRONTEND_PORT" || true
     [[ -n "$TAIL_PID" ]] && kill "$TAIL_PID" 2>/dev/null || true
     echo "✅ Cleanup complete."
     exit 0
@@ -89,16 +90,16 @@ curl -sSf http://127.0.0.1:5000/health >/dev/null || {
 }
 echo "    ✅ Rust API ready at http://127.0.0.1:5000"
 
-echo "[*] Starting Vite frontend on port 8080..."
+echo "[*] Starting Vite frontend on port $FRONTEND_PORT..."
 cd "$FRONTEND_DIR"
 [[ -d node_modules ]] || npm install
-nohup npm run dev -- --host 0.0.0.0 --port 8080 >"$BACKEND_DIR/$NPM_LOG" 2>&1 &
+nohup npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT" >"$BACKEND_DIR/$NPM_LOG" 2>&1 &
 sleep 4
-curl -sSf http://127.0.0.1:8080/ >/dev/null || {
+curl -sSf "http://127.0.0.1:${FRONTEND_PORT}/" >/dev/null || {
     echo "❌ Could not verify Vite frontend (check $NPM_LOG)"
     cleanup
 }
-echo "    ✅ Frontend ready at http://127.0.0.1:8080"
+echo "    ✅ Frontend ready at http://127.0.0.1:${FRONTEND_PORT}"
 
 cd "$BACKEND_DIR"
 echo "[*] Tailing logs (IPFS, Solana, Python, Cargo, NPM)..."

@@ -9,7 +9,10 @@ export default function Books() {
   const location = useLocation();
   const queryParam = useMemo(() => new URLSearchParams(location.search).get('q') || '', [location.search]);
 
-  const { data: library = [] } = useQuery({ queryKey: ['library-metadata'], queryFn: api.getAllMetadata });
+  const { data: library = [], isLoading: libraryLoading, error: libraryError } = useQuery({
+    queryKey: ['library-metadata'],
+    queryFn: api.getAllMetadata,
+  });
   const { data: searchResults } = useQuery({
     queryKey: ['title-search', queryParam],
     queryFn: () => api.searchByTitle(queryParam),
@@ -24,6 +27,8 @@ export default function Books() {
         <CardTitle>All Books (A–Z)</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
+        {libraryLoading && !queryParam && <p className="text-sm text-muted-foreground">Loading books...</p>}
+        {libraryError && !queryParam && <p className="text-sm text-destructive">Could not load books. Check backend on port 5000.</p>}
         {books.map((book) => (
           <div key={book.id} className="flex items-center justify-between rounded border border-border/40 px-3 py-2">
             <div>

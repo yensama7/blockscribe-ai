@@ -1,4 +1,21 @@
 const API_BASE_URL = 'http://127.0.0.1:5000';
+const REQUEST_TIMEOUT_MS = 10_000;
+
+const fetchWithTimeout = async (url: string, init?: RequestInit): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+};
 
 export interface ArchiveRecord {
   id: number;
@@ -48,7 +65,7 @@ export interface LibraryHighlights {
 }
 
 const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}): ${response.statusText}`);
   }
@@ -87,19 +104,12 @@ export const api = {
   searchByTitle: async (query: string): Promise<ArchiveRecord[]> =>
     fetchJson<ArchiveRecord[]>(`/search?field=title&q=${encodeURIComponent(query)}`),
 
-  uploadFile: async (
-    file: File,
-    walletAddress: string,
-    accessType: 'open' | 'restricted',
-    publishFeeLamports: number,
-  ): Promise<UploadResponse> => {
+  uploadFile: async (file: File, walletAddress: string): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('wallet_address', walletAddress);
     formData.append('file', file);
-    formData.append('access_type', accessType);
-    formData.append('publish_fee_lamports', String(publishFeeLamports));
 
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/upload`, {
       method: 'POST',
       body: formData,
     });

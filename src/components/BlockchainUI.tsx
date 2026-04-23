@@ -24,13 +24,14 @@ export const BlockchainUI = () => {
   const [selectedIntegrityFile, setSelectedIntegrityFile] = useState<File | null>(null);
   const [verificationHash, setVerificationHash] = useState('');
   const [integrityResult, setIntegrityResult] = useState<{ found: boolean; record?: ArchiveRecord } | null>(null);
-  const [accessType, setAccessType] = useState<'open' | 'restricted'>('open');
-  const [publishFee, setPublishFee] = useState(1000);
 
-  const { data: library = [] } = useQuery({ queryKey: ['library-metadata'], queryFn: api.getAllMetadata });
+  const { data: library = [], isLoading: libraryLoading, error: libraryError } = useQuery({
+    queryKey: ['library-metadata'],
+    queryFn: api.getAllMetadata,
+  });
 
   const uploadMutation = useMutation({
-    mutationFn: ({ file, wallet }: { file: File; wallet: string }) => api.uploadFile(file, wallet, accessType, publishFee),
+    mutationFn: ({ file, wallet }: { file: File; wallet: string }) => api.uploadFile(file, wallet),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-metadata'] });
       queryClient.invalidateQueries({ queryKey: ['library-highlights'] });
@@ -60,8 +61,8 @@ export const BlockchainUI = () => {
   };
 
   const handleIntegrity = async () => {
-    if (!selectedIntegrityFile || !requireWallet()) {
-      toast({ title: 'Wallet required', description: 'Link wallet before integrity check.', variant: 'destructive' });
+    if (!selectedIntegrityFile) {
+      toast({ title: 'File required', description: 'Choose a file before integrity check.', variant: 'destructive' });
       return;
     }
     const hash = await hashFileSha256(selectedIntegrityFile);
@@ -70,24 +71,11 @@ export const BlockchainUI = () => {
   };
 
   const handleDownload = async (record: ArchiveRecord) => {
-    if (!requireWallet()) {
-      toast({ title: 'Wallet required', description: 'Link wallet before download.', variant: 'destructive' });
-      return;
-    }
-
     try {
       const integrity = await api.verifyFileHash(record.file_hash);
       if (!integrity.exists) {
         toast({ title: 'Integrity mismatch', description: 'Cannot download: hash not anchored.', variant: 'destructive' });
         return;
-      }
-
-      const feePlan = await api.registerDownload(record.id, walletAddress);
-      if (record.access_type === 'restricted') {
-        toast({
-          title: 'Restricted fee plan',
-          description: `${feePlan.amount_lamports_total} lamports total (${feePlan.amount_lamports_uploader} uploader + ${feePlan.amount_lamports_developer} developer).`,
-        });
       }
       window.open(`https://ipfs.io/ipfs/${record.file_cid}`, '_blank', 'noopener,noreferrer');
     } catch (error) {
@@ -101,17 +89,10 @@ export const BlockchainUI = () => {
       <Card>
         <CardHeader>
           <CardTitle>Upload Document</CardTitle>
-          <CardDescription>Send file to backend for AI extraction, IPFS storage, hashing, and on-chain memo.</CardDescription>
+          <CardDescription>Open library flow: upload a file, backend anchors hash/CID on Solana, then publishes metadata.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Input type="file" onChange={(event: ChangeEvent<HTMLInputElement>) => setSelectedUploadFile(event.target.files?.[0] || null)} />
-          <div className="flex gap-2">
-            <select value={accessType} onChange={(e) => setAccessType(e.target.value as 'open' | 'restricted')} className="rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="open">Open access</option>
-              <option value="restricted">Restricted access</option>
-            </select>
-            <Input type="number" min={0} value={publishFee} onChange={(e) => setPublishFee(Number(e.target.value) || 0)} />
-          </div>
           <Button onClick={handleUpload} disabled={!selectedUploadFile || uploadMutation.isPending}>
             <Upload className="mr-2 h-4 w-4" /> {uploadMutation.isPending ? 'Uploading...' : 'Upload'}
           </Button>
@@ -138,6 +119,8 @@ export const BlockchainUI = () => {
           <CardTitle>Recent Library</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {libraryLoading && <p className="text-sm text-muted-foreground">Loading recent books...</p>}
+          {libraryError && <p className="text-sm text-destructive">Could not load recent books. Check backend on port 5000.</p>}
           {library.slice(0, 6).map((record) => (
             <div key={record.id} className="flex items-center justify-between rounded border border-border/40 px-3 py-2">
               <div>

@@ -549,7 +549,14 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         let cors = Cors::default()
-            .allowed_origin("http://localhost:8080")
+            .allowed_origin_fn(|origin, _req_head| {
+                origin
+                    .to_str()
+                    .map(|value| {
+                        value.starts_with("http://127.0.0.1:") || value.starts_with("http://localhost:")
+                    })
+                    .unwrap_or(false)
+            })
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])
             .allowed_headers(vec![
                 http::header::CONTENT_TYPE,
