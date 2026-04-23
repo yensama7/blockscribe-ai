@@ -62,9 +62,15 @@ This starts:
 - IPFS API/Web UI (local install defaults): http://127.0.0.1:5001/webui
 
 
+<<<<<<< codex/implement-solana-wallet-integration-and-file-handling-g41a02
 ## Devnet mode (optional for Solana integration testing)
 
 The backend memo writer defaults to devnet if `SOLANA_RPC_URL` is not set, but `run_server.sh` defaults `SOLANA_RPC_URL` to local validator (`http://127.0.0.1:8899`) so local full-stack startup works out of the box.
+=======
+## Devnet mode (recommended for Solana integration testing)
+
+By default, backend memo writes now use `SOLANA_RPC_URL` and fall back to `https://api.devnet.solana.com`.
+>>>>>>> main
 
 Run with devnet:
 
