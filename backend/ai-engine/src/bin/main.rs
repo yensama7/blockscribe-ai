@@ -25,6 +25,7 @@ fn log_backend_error(context: &str, error: &str) {
     eprintln!("[backend-error] {}: {}", context, error);
 }
 
+const DB_NAME: &str = "archive.db";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ArchiveRecord {
