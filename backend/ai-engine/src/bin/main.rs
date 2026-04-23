@@ -21,6 +21,12 @@ use ai_engine::{
 
 const DB_NAME: &str = "archive.db";
 
+fn log_backend_error(context: &str, error: &str) {
+    eprintln!("[backend-error] {}: {}", context, error);
+}
+
+const DB_NAME: &str = "archive.db";
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ArchiveRecord {
     id: i64,
@@ -118,8 +124,8 @@ async fn list_all() -> impl Responder {
 
     match res {
         Ok(Ok(rows)) => HttpResponse::Ok().json(rows),
-        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("db error: {}", e)),
-        Err(e) => HttpResponse::InternalServerError().body(format!("blocking error: {}", e)),
+        Ok(Err(e)) => { log_backend_error("/metadata db", &e.to_string()); HttpResponse::InternalServerError().body(format!("db error: {}", e)) },
+        Err(e) => { log_backend_error("/metadata blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("blocking error: {}", e)) },
     }
 }
 
@@ -193,8 +199,148 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
 
     match res {
         Ok(Ok(records)) => HttpResponse::Ok().json(records),
-        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("DB error: {}", e)),
-        Err(e) => HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)),
+        Ok(Err(e)) => { log_backend_error("db", &e.to_string()); HttpResponse::InternalServerError().body(format!("DB error: {}", e)) },
+        Err(e) => { log_backend_error("blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)) },
+    }
+}
+
+#[get("/integrity/check")]
+async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Responder {
+    let Some(hash) = query.get("hash").cloned() else {
+        return HttpResponse::BadRequest().body("missing 'hash' query param");
+    };
+
+    let res = web::block(move || -> Result<Option<ArchiveRecord>, rusqlite::Error> {
+        let conn = Connection::open(DB_NAME)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE file_hash = ?1 LIMIT 1",
+        )?;
+
+        let mut rows = stmt.query([hash])?;
+        if let Some(row) = rows.next()? {
+            return Ok(Some(ArchiveRecord {
+                id: row.get(0)?,
+                genre: row.get(1)?,
+                title: row.get(2)?,
+                difficulty: row.get(3)?,
+                summary: row.get(4)?,
+                file_hash: row.get(5)?,
+                file_cid: row.get(6)?,
+                uploader_wallet: row.get(7).ok(),
+                solana_signature: row.get(8).ok(),
+                access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
+                publish_fee_lamports: row.get(10).unwrap_or(1000),
+                search_count: row.get(11).unwrap_or(0),
+                created_at: row.get(12).unwrap_or_default(),
+            }));
+        }
+
+        Ok(None)
+    })
+    .await;
+
+    match res {
+        Ok(Ok(record)) => {
+            let exists = record.is_some();
+            HttpResponse::Ok().json(IntegrityCheckResponse {
+                exists,
+                matches_on_chain: exists,
+                record,
+            })
+        }
+        Ok(Err(e)) => { log_backend_error("db", &e.to_string()); HttpResponse::InternalServerError().body(format!("DB error: {}", e)) },
+        Err(e) => { log_backend_error("blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)) },
+    }
+}
+
+#[post("/download/settle-fee")]
+async fn settle_download_fee(payload: web::Json<DownloadFeeRequest>) -> impl Responder {
+    let developer_wallet = env::var("DEVELOPER_WALLET").unwrap_or_else(|_| "DEV_WALLET_PLACEHOLDER".to_string());
+    let record_id = payload.record_id;
+    let requester = payload.downloader_wallet.clone();
+
+    if requester.trim().is_empty() {
+        return HttpResponse::BadRequest().body("downloader_wallet is required");
+    }
+
+    let res = web::block(move || -> Result<Option<String>, rusqlite::Error> {
+        let conn = Connection::open(DB_NAME)?;
+        let wallet = conn
+            .query_row(
+                "SELECT uploader_wallet FROM archive WHERE id = ?1",
+                params![record_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?;
+
+        Ok(wallet.flatten())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(uploader_wallet)) => {
+            if uploader_wallet.is_none() {
+                return HttpResponse::NotFound().body("record not found or uploader wallet missing");
+            }
+
+            let publish_reimbursement = 800;
+            let developer_cut = 200;
+            HttpResponse::Ok().json(DownloadFeeResponse {
+                settled: false,
+                amount_lamports_total: publish_reimbursement + developer_cut,
+                amount_lamports_uploader: publish_reimbursement,
+                amount_lamports_developer: developer_cut,
+                uploader_wallet,
+                developer_wallet,
+            })
+        }
+        Ok(Err(e)) => { log_backend_error("db", &e.to_string()); HttpResponse::InternalServerError().body(format!("DB error: {}", e)) },
+        Err(e) => { log_backend_error("blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)) },
+    }
+}
+
+
+#[get("/library/highlights")]
+async fn library_highlights() -> impl Responder {
+    let res = web::block(move || -> Result<LibraryHighlightsResponse, rusqlite::Error> {
+        let conn = Connection::open(DB_NAME)?;
+
+        let fetch_records = |query: &str| -> Result<Vec<ArchiveRecord>, rusqlite::Error> {
+            let mut stmt = conn.prepare(query)?;
+            let rows = stmt.query_map([], |row| {
+                Ok(ArchiveRecord {
+                    id: row.get(0)?,
+                    genre: row.get(1)?,
+                    title: row.get(2)?,
+                    difficulty: row.get(3)?,
+                    summary: row.get(4)?,
+                    file_hash: row.get(5)?,
+                    file_cid: row.get(6)?,
+                    uploader_wallet: row.get(7).ok(),
+                    solana_signature: row.get(8).ok(),
+                    access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
+                    publish_fee_lamports: row.get(10).unwrap_or(1000),
+                    search_count: row.get(11).unwrap_or(0),
+                    created_at: row.get(12).unwrap_or_default(),
+                })
+            })?;
+            Ok(rows.flatten().collect())
+        };
+
+        let base = "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive";
+
+        let top_searched = fetch_records(&format!("{} ORDER BY search_count DESC, id DESC LIMIT 15", base))?;
+        let recent = fetch_records(&format!("{} ORDER BY id DESC LIMIT 10", base))?;
+        let random = fetch_records(&format!("{} ORDER BY RANDOM() LIMIT 5", base))?;
+
+        Ok(LibraryHighlightsResponse { top_searched, recent, random })
+    })
+    .await;
+
+    match res {
+        Ok(Ok(payload)) => HttpResponse::Ok().json(payload),
+        Ok(Err(e)) => { log_backend_error("db", &e.to_string()); HttpResponse::InternalServerError().body(format!("DB error: {}", e)) },
+        Err(e) => { log_backend_error("blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)) },
     }
 }
 
@@ -492,8 +638,9 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     .await
     {
         Ok(Ok(sig)) => sig,
-        Ok(Err(e)) => return Ok(HttpResponse::InternalServerError().body(format!("Solana memo failed: {}", e))),
+        Ok(Err(e)) => { log_backend_error("/api/upload solana", &e); return Ok(HttpResponse::InternalServerError().body(format!("Solana memo failed: {}", e))); },
         Err(join_err) => {
+            log_backend_error("/api/upload solana join", &join_err.to_string());
             return Ok(HttpResponse::InternalServerError().body(format!("Join error in Solana memo: {}", join_err)));
         }
     };
@@ -534,8 +681,8 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
                 "publish_fee_lamports": publish_fee_lamports
             })))
         },
-        Ok(Err(e)) => Ok(HttpResponse::InternalServerError().body(format!("Database insertion failed: {}", e))),
-        Err(join_err) => Ok(HttpResponse::InternalServerError().body(format!("Database thread join error: {}", join_err))),
+        Ok(Err(e)) => { log_backend_error("/api/upload db insert", &e); Ok(HttpResponse::InternalServerError().body(format!("Database insertion failed: {}", e))) },
+        Err(join_err) => { log_backend_error("/api/upload db join", &join_err.to_string()); Ok(HttpResponse::InternalServerError().body(format!("Database thread join error: {}", join_err))) },
     }
 }
 
