@@ -1,163 +1,142 @@
-use serde_json::{json, Value};
-use serde::Serialize;
-use serde::Deserialize;
-use tokio;
-use reqwest::Client;
+use anyhow::{anyhow, Context};
+use dotenv::dotenv;
 use pdf_extract::extract_text_from_mem;
 use regex::Regex;
-use anyhow::{anyhow, Context};
 use reqwest::multipart::{Form, Part};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::path::Path;
 use tokio::fs;
-use dotenv::dotenv;
 
+fn fallback_metadata_from_path(file_path: &str) -> ExtractedMetaData {
+    let file_name = Path::new(file_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled document")
+        .to_string();
 
-// most important functions
-pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<ExtractedMetaData>{
-    let bytes = fs::read(file_path).await.unwrap();
-    let extracted_txt = extract_text_from_mem(&bytes).unwrap();
+    ExtractedMetaData {
+        title: file_name,
+        difficulty: "Unknown".to_string(),
+        genre: "General".to_string(),
+        summary: "Metadata extraction fallback used because AI extraction is unavailable.".to_string(),
+    }
+}
 
+pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<ExtractedMetaData> {
+    let bytes = fs::read(&file_path)
+        .await
+        .with_context(|| format!("failed to read file: {file_path}"))?;
 
-    // load the dotenv variables
+    let extracted_txt = extract_text_from_mem(&bytes)
+        .unwrap_or_else(|_| "Unable to extract text from file; using fallback metadata.".to_string());
+
     dotenv().ok();
 
-    // groq api setup
-    let groq_base = env::var("GROQ_BASE").unwrap_or_else(|_| "https://api.groq.com/openai/v1/chat/completions".to_string());
-    let groq_key = env::var("GROQ_API_KEY").context("GROQ_API_KEY not set in environment variables; \n add it to your .env file".to_string())?;
+    let groq_base = env::var("GROQ_BASE")
+        .unwrap_or_else(|_| "https://api.groq.com/openai/v1/chat/completions".to_string());
+    let groq_key = match env::var("GROQ_API_KEY") {
+        Ok(key) => key,
+        Err(_) => return Ok(fallback_metadata_from_path(&file_path)),
+    };
 
-    let client = Client::new();
-
-    // json format request to the ai with the ai model
     let body = json!({
-        "model": "openai/gpt-oss-120b", // shows th model used
+        "model": "openai/gpt-oss-120b",
         "messages": [
-             {
-      "role": "system",
-      "content": "You are an assistant that extracts structured metadata from documents.",
-    },
+            {
+                "role": "system",
+                "content": "You are an assistant that extracts structured metadata from documents. Return markdown fields for Genre, Title, Difficulty Level, and Summary."
+            },
             {
                 "role": "user",
-                "content":format!(
-                    "From the following text, extract:\n\
-                     - Genre\n\
-                     - Summary (with optimal keywords)\n\
-                     - Difficulty level (Beginner/Intermediate/Advanced)\n\
-                     - Title\n\n\
-                     - Keywords\n\n\
-                     Text:\n{}",
+                "content": format!(
+                    "From the following text, extract:\n- Genre\n- Summary\n- Difficulty level (Beginner/Intermediate/Advanced)\n- Title\n\nText:\n{}",
                     extracted_txt
                 )
             }
         ],
-        "include_reasoning": false, // abstracts the thinking process
-        "temperature": 0.6 // lower values make the answers concise, recommended 0.5 - 0.7
+        "include_reasoning": false,
+        "temperature": 0.3
     });
 
-    // sends the request using reqwest
-    let resp = client
+    let response = Client::new()
         .post(groq_base)
         .bearer_auth(groq_key)
         .json(&body)
         .send()
-        .await?;
+        .await;
 
-
-    let json = resp.text().await?;
-
-    // Extract the message
-    let re = Regex::new(
-        r#"(?s)\*\*Genre:\*\*\s*(.*?)\s+.*?\*\*Title:\*\*\s*(.*?)\s+.*?\*\*Difficulty\s*Level:\*\*\s*(.*?)\s+.*?\*\*Summary.*?:\*\*\s*(.*?)""#
-    ).unwrap();
-
-    // prep the ExtractedMetaData struct, if returned then we didn't fetch anything
-    let mut metadata = ExtractedMetaData{
-        genre: "".to_string(),
-        title: "".to_string(),
-        difficulty: "".to_string(),
-        summary: "".to_string(),
+    let response_text = match response {
+        Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
+        _ => return Ok(fallback_metadata_from_path(&file_path)),
     };
 
-    if let Some(caps) = re.captures(&json) {
-        let genre = caps.get(1).unwrap().as_str().trim();
-        let title = caps.get(2).unwrap().as_str().trim();
-        let difficulty = caps.get(3).unwrap().as_str().trim();
-        let summary = caps.get(4).unwrap().as_str().trim();
+    let re = Regex::new(
+        r"(?s)\*\*Genre:\*\*\s*(.*?)\s+.*?\*\*Title:\*\*\s*(.*?)\s+.*?\*\*Difficulty\s*Level:\*\*\s*(.*?)\s+.*?\*\*Summary.*?:\*\*\s*(.*?)$",
+    )
+    .map_err(|e| anyhow!("regex initialization error: {e}"))?;
 
-        println!("Genre: {}", genre);
-        println!("Title: {}", title);
-        println!("Difficulty: {}", difficulty);
-        println!("Summary: {}", summary);
-
-        metadata = ExtractedMetaData{title: title.to_string(),
-                                    difficulty: difficulty.to_string(),
-                                    summary: summary.to_string(),
-                                    genre: genre.to_string(),
-                                    };
-
+    if let Some(caps) = re.captures(&response_text) {
+        return Ok(ExtractedMetaData {
+            genre: caps
+                .get(1)
+                .map(|v| v.as_str().trim().to_string())
+                .unwrap_or_else(|| "General".to_string()),
+            title: caps
+                .get(2)
+                .map(|v| v.as_str().trim().to_string())
+                .unwrap_or_else(|| "Untitled document".to_string()),
+            difficulty: caps
+                .get(3)
+                .map(|v| v.as_str().trim().to_string())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            summary: caps
+                .get(4)
+                .map(|v| v.as_str().trim().to_string())
+                .unwrap_or_else(|| "No summary generated.".to_string()),
+        });
     }
 
-    Ok(metadata)
-    // let record = package_hash_and_cid(pdf_path).await?;
-    // println!("FileRecord: {:?}", record);
-
-
+    Ok(fallback_metadata_from_path(&file_path))
 }
 
-pub async fn package_hash_and_cid<P: AsRef<Path>>(
-    path: P,
-) -> anyhow::Result<FileRecord> {
-    // first: compute the hash
+pub async fn package_hash_and_cid<P: AsRef<Path>>(path: P) -> anyhow::Result<FileRecord> {
     let file_hash = compute_sha256_hex(&path).await?;
-
-    // second: upload and obtain CID
     let file_cid = upload_file_to_ipfs_kubo(&path).await?;
 
-    // package and return
     Ok(FileRecord { file_hash, file_cid })
 }
 
-
-
-// structs to return
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExtractedMetaData {
     pub title: String,
-    pub difficulty: String,     // Beginner | intermediate | Advanced etc... yada yada yada; suck your mum
+    pub difficulty: String,
     pub genre: String,
     pub summary: String,
-
-    // resource_type: String,  // Lecture note, text book, research paper slides etc
-    // keywords: Vec<String>,  // is it really possible to not have any keywords LMAO
-    // topics: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRecord {
-    pub file_hash: String, // SHA-256 hex of file bytes
-    pub file_cid: String,  // IPFS CID returned by the daemon
+    pub file_hash: String,
+    pub file_cid: String,
 }
 
-
-// helper functions
 pub async fn compute_sha256_hex<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
-    // read file bytes asynchronously
     let bytes = fs::read(&path)
         .await
         .with_context(|| format!("reading file {:?}", path.as_ref()))?;
 
-    // compute SHA-256
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     let digest = hasher.finalize();
 
-    // return hex string
     Ok(hex::encode(digest))
 }
 
 async fn upload_file_to_ipfs_kubo<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
-    // read file bytes
     let bytes = fs::read(&path).await?;
     let filename = path
         .as_ref()
@@ -166,11 +145,9 @@ async fn upload_file_to_ipfs_kubo<P: AsRef<Path>>(path: P) -> anyhow::Result<Str
         .unwrap_or("file")
         .to_string();
 
-    // build multipart form
     let part = Part::bytes(bytes).file_name(filename);
     let form = Form::new().part("file", part);
 
-    // send request to local ipfs daemon
     let resp_text = Client::new()
         .post("http://127.0.0.1:5001/api/v0/add")
         .multipart(form)
@@ -179,7 +156,6 @@ async fn upload_file_to_ipfs_kubo<P: AsRef<Path>>(path: P) -> anyhow::Result<Str
         .text()
         .await?;
 
-    // parse JSON and return "Hash"
     let v: Value = serde_json::from_str(&resp_text)?;
     let cid = v
         .get("Hash")
