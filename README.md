@@ -49,7 +49,7 @@ chmod +x run_server.sh
 This starts:
 
 - IPFS daemon
-- Solana test validator
+- Solana test validator (only for local validator mode)
 - Python vector service on `8001`
 - Rust API on `5000`
 - Frontend on `8080`
@@ -60,6 +60,24 @@ This starts:
 - Rust API health: http://127.0.0.1:5000/health
 - Python FastAPI docs: http://127.0.0.1:8001/docs
 - IPFS API/Web UI (local install defaults): http://127.0.0.1:5001/webui
+
+
+## Devnet mode (recommended for Solana integration testing)
+
+By default, backend memo writes now use `SOLANA_RPC_URL` and fall back to `https://api.devnet.solana.com`.
+
+Run with devnet:
+
+```bash
+export SOLANA_RPC_URL=https://api.devnet.solana.com
+# optional: signer used for memo txs (defaults to ~/.config/solana/id.json)
+export SOLANA_KEYPAIR_PATH=$HOME/.config/solana/id.json
+
+cd backend
+./run_server.sh
+```
+
+If `SOLANA_RPC_URL` points to `http://localhost:8899`, `run_server.sh` will start `solana-test-validator`. Otherwise it will use the external RPC and skip local validator startup.
 
 ## Manual run (if you prefer)
 
@@ -89,6 +107,8 @@ npm run dev -- --host 0.0.0.0 --port 8080
 
 - Rust currently binds to `127.0.0.1:5000`.
 - Cargo manifest file is named `cargo.toml` (lowercase) in this repo, so commands use `--manifest-path backend/ai-engine/cargo.toml`.
-- Configure developer wallet with env vars:
-  - Frontend: `VITE_DEVELOPER_WALLET`
-  - Backend: `DEVELOPER_WALLET`
+- Configure runtime env vars:
+  - Solana RPC: `SOLANA_RPC_URL` (default: `https://api.devnet.solana.com`)
+  - Solana signer keypair: `SOLANA_KEYPAIR_PATH` (default: `~/.config/solana/id.json`)
+  - Frontend developer wallet: `VITE_DEVELOPER_WALLET`
+  - Backend developer wallet: `DEVELOPER_WALLET`

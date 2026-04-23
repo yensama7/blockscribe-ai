@@ -16,11 +16,14 @@ export interface ArchiveRecord {
   created_at?: string;
 }
 
-export interface UploadPrepareResponse {
-  upload_id: string;
+export interface UploadResponse {
+  status: string;
   metadata: { title?: string; difficulty?: string; genre?: string; summary?: string };
   file_record: { file_hash: string; file_cid: string };
-  memo_text: string;
+  solana_signature?: string;
+  uploader_wallet?: string;
+  access_type?: string;
+  publish_fee_lamports?: number;
 }
 
 export interface IntegrityCheckResult {
@@ -30,8 +33,7 @@ export interface IntegrityCheckResult {
 }
 
 export interface DownloadFeePlan {
-  record_id: number;
-  access_type: string;
+  settled: boolean;
   amount_lamports_total: number;
   amount_lamports_uploader: number;
   amount_lamports_developer: number;
@@ -85,50 +87,38 @@ export const api = {
   searchByTitle: async (query: string): Promise<ArchiveRecord[]> =>
     fetchJson<ArchiveRecord[]>(`/search?field=title&q=${encodeURIComponent(query)}`),
 
-  prepareUpload: async (
+  uploadFile: async (
     file: File,
+    walletAddress: string,
     accessType: 'open' | 'restricted',
     publishFeeLamports: number,
-  ): Promise<UploadPrepareResponse> => {
+  ): Promise<UploadResponse> => {
     const formData = new FormData();
+    formData.append('wallet_address', walletAddress);
     formData.append('file', file);
     formData.append('access_type', accessType);
     formData.append('publish_fee_lamports', String(publishFeeLamports));
 
-    const response = await fetch(`${API_BASE_URL}/api/upload/prepare`, {
+    const response = await fetch(`${API_BASE_URL}/api/upload`, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Upload prepare failed (${response.status}): ${response.statusText}`);
+      throw new Error(`Upload failed (${response.status}): ${response.statusText}`);
     }
 
     return response.json();
   },
 
-  confirmUpload: async (uploadId: string, walletAddress: string, txSignature: string): Promise<void> => {
-    await fetchJson('/api/upload/confirm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ upload_id: uploadId, wallet_address: walletAddress, tx_signature: txSignature }),
-    });
-  },
-
   verifyFileHash: async (hash: string): Promise<IntegrityCheckResult> =>
     fetchJson<IntegrityCheckResult>(`/integrity/check?hash=${encodeURIComponent(hash)}`),
 
-  getDownloadQuote: async (recordId: number, downloaderWallet: string): Promise<DownloadFeePlan> =>
+  registerDownload: async (recordId: number, downloaderWallet: string): Promise<DownloadFeePlan> =>
     fetchJson<DownloadFeePlan>('/download/settle-fee', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ record_id: recordId, downloader_wallet: downloaderWallet }),
     }),
 
-  verifyDownloadAndServe: async (recordId: number, downloaderWallet: string, txSignature: string): Promise<{ download_url: string }> =>
-    fetchJson<{ download_url: string }>('/download/verify-and-serve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ record_id: recordId, downloader_wallet: downloaderWallet, tx_signature: txSignature }),
-    }),
 };

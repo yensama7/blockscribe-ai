@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { api, ArchiveRecord } from '@/services/api';
 import { useWallet } from '@/context/WalletContext';
-import { sendFeeSplitTransfer, sendMemoTransaction } from '@/lib/solanaTransactions';
 
 const hashFileSha256 = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer();
@@ -19,7 +18,7 @@ const hashFileSha256 = async (file: File): Promise<string> => {
 export const BlockchainUI = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { walletAddress, connectedProvider, requireWallet } = useWallet();
+  const { walletAddress, requireWallet } = useWallet();
 
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [selectedIntegrityFile, setSelectedIntegrityFile] = useState<File | null>(null);
@@ -31,17 +30,11 @@ export const BlockchainUI = () => {
   const { data: library = [] } = useQuery({ queryKey: ['library-metadata'], queryFn: api.getAllMetadata });
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, wallet }: { file: File; wallet: string }) => {
-      if (!connectedProvider) throw new Error('No connected wallet provider');
-      const prepared = await api.prepareUpload(file, accessType, publishFee);
-      const signature = await sendMemoTransaction(connectedProvider, prepared.memo_text);
-      await api.confirmUpload(prepared.upload_id, wallet, signature);
-      return prepared;
-    },
+    mutationFn: ({ file, wallet }: { file: File; wallet: string }) => api.uploadFile(file, wallet, accessType, publishFee),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-metadata'] });
       queryClient.invalidateQueries({ queryKey: ['library-highlights'] });
-      toast({ title: 'Uploaded', description: 'Backend prepared hash/CID, wallet signed memo, backend verified and saved.' });
+      toast({ title: 'Uploaded', description: 'Document uploaded, anchored on Solana, and saved.' });
     },
     onError: (error) => {
       console.error('Upload flow error:', error);
@@ -77,7 +70,7 @@ export const BlockchainUI = () => {
   };
 
   const handleDownload = async (record: ArchiveRecord) => {
-    if (!requireWallet() || !connectedProvider) {
+    if (!requireWallet()) {
       toast({ title: 'Wallet required', description: 'Link wallet before download.', variant: 'destructive' });
       return;
     }
@@ -89,32 +82,26 @@ export const BlockchainUI = () => {
         return;
       }
 
-      const quote = await api.getDownloadQuote(record.id, walletAddress);
-      let transferSig = '';
-
-      if (quote.access_type === 'restricted') {
-        transferSig = await sendFeeSplitTransfer(
-          connectedProvider,
-          quote.uploader_wallet || walletAddress,
-          quote.developer_wallet,
-          quote.amount_lamports_uploader,
-          quote.amount_lamports_developer,
-        );
+      const feePlan = await api.registerDownload(record.id, walletAddress);
+      if (record.access_type === 'restricted') {
+        toast({
+          title: 'Restricted fee plan',
+          description: `${feePlan.amount_lamports_total} lamports total (${feePlan.amount_lamports_uploader} uploader + ${feePlan.amount_lamports_developer} developer).`,
+        });
       }
-
-      const served = await api.verifyDownloadAndServe(record.id, walletAddress, transferSig);
-      window.open(served.download_url, '_blank', 'noopener,noreferrer');
+      window.open(`https://ipfs.io/ipfs/${record.file_cid}`, '_blank', 'noopener,noreferrer');
     } catch (error) {
       console.error('Download flow error:', error);
       toast({ title: 'Download failed', description: error instanceof Error ? error.message : 'Download failed.', variant: 'destructive' });
     }
+  };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Upload Document</CardTitle>
-          <CardDescription>Step 1-5 flow: backend prepares hash/CID, wallet signs memo, backend verifies signature, then saves.</CardDescription>
+          <CardDescription>Send file to backend for AI extraction, IPFS storage, hashing, and on-chain memo.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Input type="file" onChange={(event: ChangeEvent<HTMLInputElement>) => setSelectedUploadFile(event.target.files?.[0] || null)} />

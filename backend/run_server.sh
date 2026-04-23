@@ -42,15 +42,26 @@ until ipfs id >/dev/null 2>&1; do
 done
 echo "    ✅ IPFS ready"
 
-echo "[*] Starting Solana test validator..."
-if ! pgrep -x "solana-test-validator" >/dev/null 2>&1; then
-    nohup solana-test-validator >"$SOLANA_LOG" 2>&1 &
+SOLANA_RPC_URL="${SOLANA_RPC_URL:-https://api.devnet.solana.com}"
+
+if [[ "$SOLANA_RPC_URL" == "http://localhost:8899" || "$SOLANA_RPC_URL" == "http://127.0.0.1:8899" ]]; then
+    echo "[*] Starting Solana test validator..."
+    if ! pgrep -x "solana-test-validator" >/dev/null 2>&1; then
+        nohup solana-test-validator >"$SOLANA_LOG" 2>&1 &
+    fi
+    until solana cluster-version -u "$SOLANA_RPC_URL" >/dev/null 2>&1; do
+        echo "    Waiting for Solana validator to be ready..."
+        sleep 2
+    done
+    echo "    ✅ Solana ready at $SOLANA_RPC_URL"
+else
+    echo "[*] Using external Solana RPC: $SOLANA_RPC_URL"
+    solana cluster-version -u "$SOLANA_RPC_URL" >/dev/null 2>&1 || {
+        echo "❌ Could not reach Solana RPC at $SOLANA_RPC_URL"
+        cleanup
+    }
+    echo "    ✅ Solana RPC reachable"
 fi
-until solana cluster-version >/dev/null 2>&1; do
-    echo "    Waiting for Solana validator to be ready..."
-    sleep 2
-done
-echo "    ✅ Solana ready"
 
 if [[ ! -d "$VENV_DIR" ]]; then
     echo "[*] Creating Python virtual environment at $VENV_DIR ..."
