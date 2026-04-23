@@ -1,6 +1,4 @@
-const API_BASE_URL = "http://127.0.0.1:5000";
-
-console.log('API Base URL:', API_BASE_URL);
+const API_BASE_URL = 'http://127.0.0.1:5000';
 
 export interface ArchiveRecord {
   id: number;
@@ -10,152 +8,127 @@ export interface ArchiveRecord {
   summary: string;
   file_hash: string;
   file_cid: string;
+  uploader_wallet?: string;
+  solana_signature?: string;
+  access_type?: string;
+  publish_fee_lamports?: number;
+  search_count?: number;
+  created_at?: string;
 }
 
-export interface SearchResult {
-  ids: string[][];
-  documents: string[][];
-  metadatas: any[][];
-  distances: number[][];
+export interface UploadPrepareResponse {
+  upload_id: string;
+  metadata: { title?: string; difficulty?: string; genre?: string; summary?: string };
+  file_record: { file_hash: string; file_cid: string };
+  memo_text: string;
 }
+
+export interface IntegrityCheckResult {
+  exists: boolean;
+  matches_on_chain: boolean;
+  record?: ArchiveRecord;
+}
+
+export interface DownloadFeePlan {
+  record_id: number;
+  access_type: string;
+  amount_lamports_total: number;
+  amount_lamports_uploader: number;
+  amount_lamports_developer: number;
+  uploader_wallet?: string;
+  developer_wallet: string;
+}
+
+export interface LibraryHighlights {
+  top_searched: ArchiveRecord[];
+  recent: ArchiveRecord[];
+  random: ArchiveRecord[];
+}
+
+const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status}): ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+};
+
+const normalizeMetadataRows = (rows: string[][]): ArchiveRecord[] =>
+  rows.map((row) => {
+    const [fileHash = '', fileCid = ''] = (row[5] || '').split('|');
+
+    return {
+      id: Number(row[0]),
+      genre: row[1] || 'Unknown',
+      title: row[2] || 'Untitled',
+      difficulty: row[3] || 'Unknown',
+      summary: row[4] || '',
+      file_hash: fileHash,
+      file_cid: fileCid,
+      uploader_wallet: row[6] || undefined,
+      solana_signature: row[7] || undefined,
+      access_type: row[8] || 'open',
+      publish_fee_lamports: Number(row[9] || 1000),
+      search_count: Number(row[10] || 0),
+      created_at: row[11] || undefined,
+    };
+  });
 
 export const api = {
-  // Get all metadata
-  getAllMetadata: async (): Promise<string[][]> => {
-    console.log('API Call: GET /metadata');
-    try {
-      const response = await fetch(`${API_BASE_URL}/metadata`);
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to fetch metadata: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Metadata response:', data);
-      return data;
-    } catch (error) {
-      console.error('getAllMetadata error:', error);
-      throw error;
-    }
+  getAllMetadata: async (): Promise<ArchiveRecord[]> => {
+    const rows = await fetchJson<string[][]>('/metadata');
+    return normalizeMetadataRows(rows);
   },
 
-  // Get metadata by ID
-  getMetadataById: async (id: number): Promise<ArchiveRecord> => {
-    console.log('API Call: GET /metadata/' + id);
-    try {
-      const response = await fetch(`${API_BASE_URL}/metadata/${id}`);
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to fetch metadata by ID: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Metadata by ID response:', data);
-      return data;
-    } catch (error) {
-      console.error('getMetadataById error:', error);
-      throw error;
+  getLibraryHighlights: async (): Promise<LibraryHighlights> => fetchJson<LibraryHighlights>('/library/highlights'),
+
+  searchByTitle: async (query: string): Promise<ArchiveRecord[]> =>
+    fetchJson<ArchiveRecord[]>(`/search?field=title&q=${encodeURIComponent(query)}`),
+
+  prepareUpload: async (
+    file: File,
+    accessType: 'open' | 'restricted',
+    publishFeeLamports: number,
+  ): Promise<UploadPrepareResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('access_type', accessType);
+    formData.append('publish_fee_lamports', String(publishFeeLamports));
+
+    const response = await fetch(`${API_BASE_URL}/api/upload/prepare`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upload prepare failed (${response.status}): ${response.statusText}`);
     }
+
+    return response.json();
   },
 
-  // Search by field
-  searchByField: async (field: string, query: string): Promise<ArchiveRecord[]> => {
-    const url = `${API_BASE_URL}/search?field=${field}&q=${encodeURIComponent(query)}`;
-    console.log('API Call: GET', url);
-    try {
-      const response = await fetch(url);
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to search: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Search response:', data);
-      return data;
-    } catch (error) {
-      console.error('searchByField error:', error);
-      throw error;
-    }
+  confirmUpload: async (uploadId: string, walletAddress: string, txSignature: string): Promise<void> => {
+    await fetchJson('/api/upload/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upload_id: uploadId, wallet_address: walletAddress, tx_signature: txSignature }),
+    });
   },
 
-  // Get difficulty analytics
-  getDifficultyAnalytics: async (): Promise<any> => {
-    console.log('API Call: GET /analytics/difficulty');
-    try {
-      const response = await fetch(`${API_BASE_URL}/analytics/difficulty`);
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to fetch difficulty analytics: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Difficulty analytics response:', data);
-      return data;
-    } catch (error) {
-      console.error('getDifficultyAnalytics error:', error);
-      throw error;
-    }
-  },
+  verifyFileHash: async (hash: string): Promise<IntegrityCheckResult> =>
+    fetchJson<IntegrityCheckResult>(`/integrity/check?hash=${encodeURIComponent(hash)}`),
 
-  // Get genre analytics
-  getGenreAnalytics: async (): Promise<any> => {
-    console.log('API Call: GET /analytics/genre');
-    try {
-      const response = await fetch(`${API_BASE_URL}/analytics/genre`);
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to fetch genre analytics: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Genre analytics response:', data);
-      return data;
-    } catch (error) {
-      console.error('getGenreAnalytics error:', error);
-      throw error;
-    }
-  },
+  getDownloadQuote: async (recordId: number, downloaderWallet: string): Promise<DownloadFeePlan> =>
+    fetchJson<DownloadFeePlan>('/download/settle-fee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record_id: recordId, downloader_wallet: downloaderWallet }),
+    }),
 
-  // Get clusters
-  getClusters: async (n: number = 3): Promise<any> => {
-    console.log('API Call: GET /analytics/clusters?n=' + n);
-    try {
-      const response = await fetch(`${API_BASE_URL}/analytics/clusters?n=${n}`);
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to fetch clusters: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Clusters response:', data);
-      return data;
-    } catch (error) {
-      console.error('getClusters error:', error);
-      throw error;
-    }
-  },
-
-  // AI search
-  aiSearch: async (query: string, k: number = 3): Promise<SearchResult> => {
-    console.log('API Call: POST /ai-search', { query, k });
-    try {
-      const response = await fetch(`${API_BASE_URL}/ai-search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, k }),
-      });
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to perform AI search: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('AI search response:', data);
-      return data;
-    } catch (error) {
-      console.error('aiSearch error:', error);
-      throw error;
-    }
-  },
-
-  // Upload file
-  uploadFile: async (file: File): Promise<any> => {
-    console.log('API Call: POST /api/upload', { fileName: file.name, fileSize: file.size });
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      
-      const response = await fetch(`${API_BASE_URL}/api/upload`, {
-        method: "POST",
-        body: formData,
-      });
-      console.log('Response status:', response.status);
-      if (!response.ok) throw new Error(`Failed to upload file: ${response.status} ${response.statusText}`);
-      const data = await response.json();
-      console.log('Upload response:', data);
-      return data;
-    } catch (error) {
-      console.error('uploadFile error:', error);
-      throw error;
-    }
-  },
+  verifyDownloadAndServe: async (recordId: number, downloaderWallet: string, txSignature: string): Promise<{ download_url: string }> =>
+    fetchJson<{ download_url: string }>('/download/verify-and-serve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record_id: recordId, downloader_wallet: downloaderWallet, tx_signature: txSignature }),
+    }),
 };
