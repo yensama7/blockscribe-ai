@@ -108,7 +108,6 @@ export const BlockchainUI = () => {
       console.error('Download flow error:', error);
       toast({ title: 'Download failed', description: error instanceof Error ? error.message : 'Download failed.', variant: 'destructive' });
     }
-  };
 
   return (
     <div className="space-y-6">
