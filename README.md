@@ -1,95 +1,114 @@
 # Blockscribe AI
 
-Blockscribe AI is a two-part system for ingesting, analyzing, and serving documents with blockchain anchoring.  
-It consists of:
+Blockscribe AI is a document library with blockchain anchoring.
 
-- **Rust Actix-Web server** (main entrypoint)  
-  Handles file uploads, metadata extraction, storage in SQLite, Solana memo posting, and querying.
+It has three main runtime components:
 
-- **Python FastAPI service**  
-  Provides vector search and analytics endpoints (difficulty, genre distribution, clustering).
+- **Rust Actix server** (`backend/ai-engine/src/bin/main.rs`)  
+  Upload flow, metadata persistence, integrity endpoints, and Solana memo anchoring.
+- **Python FastAPI vector service** (`backend/ai-engine/src/vectored/vector_service.py`)  
+  Analytics and vector-search endpoints.
+- **React/Vite frontend** (`src/`)  
+  Wallet-gated UI for upload/download/integrity verification.
 
----
+## What the app is expected to do
 
-## Features
+- Users can navigate without a wallet.
+- Any document action (upload, integrity check, download) requires a connected Solana wallet.
+- Upload flow:
+  1. File is uploaded to IPFS Kubo.
+  2. SHA-256 hash + CID are anchored on Solana memo.
+  3. Record is stored in SQLite with uploader wallet.
+- Integrity flow:
+  - User uploads a document to check whether its hash exists in stored/on-chain anchored records.
+- Download flow:
+  - Backend returns a fee-split plan (uploader reimbursement + developer cut) before download.
 
-- Upload files → extract metadata, compute hash & CID, store in SQLite (`archive.db`), and anchor a memo on Solana.
-- Query stored records by ID or fields.
-- Vector search powered by Python backend.
-- Analytics endpoints (difficulty distribution, genre breakdown, clustering).
-- Full JSON APIs for integration.
+## Prerequisites
 
----
+Install locally before running scripts:
 
-## Requirements
-
-- Rust (latest stable)
+- Node.js + npm
 - Python 3.10+
-- SQLite3
-- Solana CLI / RPC connection (for `send_memo`)
-- [Poetry](https://python-poetry.org/) or `pip` for Python deps
+- Rust (stable toolchain)
+- IPFS Kubo CLI (`ipfs`)
+- Solana CLI (`solana`, `solana-test-validator`)
 
----
+> `backend/install.sh` can help bootstrap dependencies, but review it first because it uses `sudo apt-get`.
 
-## Setup
+## Quick start (recommended)
 
-### 1. Clone the repo
-```bash
-git clone https://github.com/yensama7/blockscribe-ai.git
-cd blockscribe-ai
-```
-
-### 2. Run the development stack
-
-We provide a single script to bring up all services:
-
-- IPFS daemon  
-- Solana test validator  
-- Python FastAPI vector service  
-- Rust Actix-Web server  
-- React Vite frontend (port 8080)  
-
-From the `blockscribe-ai/backend/` directory:
+From repo root:
 
 ```bash
-cd blockscribe-ai/backend
+cd backend
 chmod +x run_server.sh
 ./run_server.sh
 ```
 
-#### What the script does
+This starts:
 
-- Start each service in the background with `nohup`.
-- Install missing dependencies automatically (`pip install -r requirements.txt`, `npm install`).
-- Health-check all services. If any service fails, the script cleans up and exits.
-- Tail logs:
-  - `ipfs.log`
-  - `solana.log`
-  - `vector_service.log`
-  - `cargo_server.log`
-  - `npm_server.log`
+- IPFS daemon
+- Solana test validator (only for local validator mode)
+- Python vector service on `8001`
+- Rust API on `5000`
+- Frontend on `8080`
 
----
+### Endpoints
 
-#### Access the services
+- Frontend: http://127.0.0.1:8080
+- Rust API health: http://127.0.0.1:5000/health
+- Python FastAPI docs: http://127.0.0.1:8001/docs
+- IPFS API/Web UI (local install defaults): http://127.0.0.1:5001/webui
 
-- React frontend: [http://localhost:8080](http://localhost:8080)
-- Rust API: [http://localhost:8000](http://localhost:8000)
-- Python FastAPI docs: [http://localhost:8001/docs](http://localhost:8001/docs)
-- IPFS daemon: [http://127.0.0.1:5001/webui](http://127.0.0.1:5001/webui)
-- Solana test validator: running locally  
 
----
+## Devnet mode (recommended for Solana integration testing)
 
-#### Note: The ipfs daemon and solana test validator have to be installed on the  machine
+By default, backend memo writes now use `SOLANA_RPC_URL` and fall back to `https://api.devnet.solana.com`.
 
-#### Development Notes
+Run with devnet:
 
-- Logs are written to the `blockscribe-ai/backend/` directory:
-  - `ipfs.log`
-  - `solana.log`
-  - `vector_service.log`
-  - `cargo_server.log`
-  - `npm_server.log`
+```bash
+export SOLANA_RPC_URL=https://api.devnet.solana.com
+# optional: signer used for memo txs (defaults to ~/.config/solana/id.json)
+export SOLANA_KEYPAIR_PATH=$HOME/.config/solana/id.json
 
-- Modify `run_server.sh` if you need to change ports or add services.  
+cd backend
+./run_server.sh
+```
+
+If `SOLANA_RPC_URL` points to `http://localhost:8899`, `run_server.sh` will start `solana-test-validator`. Otherwise it will use the external RPC and skip local validator startup.
+
+## Manual run (if you prefer)
+
+Open separate terminals and run:
+
+```bash
+# 1) vector service
+cd backend/ai-engine
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r src/vectored/requirements.txt
+python src/vectored/vector_service.py
+```
+
+```bash
+# 2) rust api
+cargo run --manifest-path backend/ai-engine/cargo.toml
+```
+
+```bash
+# 3) frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 8080
+```
+
+## Notes / current implementation caveats
+
+- Rust currently binds to `127.0.0.1:5000`.
+- Cargo manifest file is named `cargo.toml` (lowercase) in this repo, so commands use `--manifest-path backend/ai-engine/cargo.toml`.
+- Configure runtime env vars:
+  - Solana RPC: `SOLANA_RPC_URL` (default: `https://api.devnet.solana.com`)
+  - Solana signer keypair: `SOLANA_KEYPAIR_PATH` (default: `~/.config/solana/id.json`)
+  - Frontend developer wallet: `VITE_DEVELOPER_WALLET`
+  - Backend developer wallet: `DEVELOPER_WALLET`
