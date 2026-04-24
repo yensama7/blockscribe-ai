@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { api, ArchiveRecord } from '@/services/api';
 import { useWallet } from '@/context/WalletContext';
+import { sendMemoTransaction } from '@/lib/solanaTransactions';
 
 const hashFileSha256 = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer();
@@ -18,7 +19,7 @@ const hashFileSha256 = async (file: File): Promise<string> => {
 export const BlockchainUI = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { walletAddress, requireWallet } = useWallet();
+  const { walletAddress, requireWallet, connectedProvider } = useWallet();
 
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [selectedIntegrityFile, setSelectedIntegrityFile] = useState<File | null>(null);
@@ -31,11 +32,24 @@ export const BlockchainUI = () => {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: ({ file, wallet }: { file: File; wallet: string }) => api.uploadFile(file, wallet),
+    mutationFn: async ({ file, wallet }: { file: File; wallet: string }) => {
+      const uploadResult = await api.uploadFile(file, wallet);
+      const memoMessage =
+        uploadResult.memo_message ||
+        `book_hash:${uploadResult.file_record.file_hash};ipfs_cid:${uploadResult.file_record.file_cid}`;
+
+      if (!connectedProvider) {
+        throw new Error('Wallet provider is disconnected');
+      }
+
+      const signature = await sendMemoTransaction(connectedProvider, memoMessage);
+      await api.confirmUploadSignature(uploadResult.file_record.file_hash, signature, wallet);
+      return uploadResult;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-metadata'] });
       queryClient.invalidateQueries({ queryKey: ['library-highlights'] });
-      toast({ title: 'Uploaded', description: 'Document uploaded, anchored on Solana, and saved.' });
+      toast({ title: 'Uploaded', description: 'Document uploaded, memo signed, and metadata saved.' });
     },
     onError: (error) => {
       console.error('Upload flow error:', error);
@@ -89,7 +103,7 @@ export const BlockchainUI = () => {
       <Card>
         <CardHeader>
           <CardTitle>Upload Document</CardTitle>
-          <CardDescription>Open library flow: upload a file, backend anchors hash/CID on Solana, then publishes metadata.</CardDescription>
+          <CardDescription>Upload a file, receive memo payload from backend, sign it with your wallet, then save the signature.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Input type="file" onChange={(event: ChangeEvent<HTMLInputElement>) => setSelectedUploadFile(event.target.files?.[0] || null)} />
