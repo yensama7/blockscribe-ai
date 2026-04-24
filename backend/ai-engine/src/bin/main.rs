@@ -89,11 +89,14 @@ struct UploadSignatureRequest {
     uploader_wallet: String,
 }
 
+<<<<<<< codex/fix-multiple-document-upload-errors-g5uv91
 #[derive(Debug, Deserialize)]
 struct WalletMetadataQuery {
     wallet: String,
 }
 
+=======
+>>>>>>> main
 #[derive(Debug, Serialize)]
 struct DownloadFeeResponse {
     settled: bool,
