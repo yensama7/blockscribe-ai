@@ -1,7 +1,7 @@
 use crate::nlp::engine::{ExtractedMetaData, FileRecord};
 use rusqlite::{Connection, Result};
 
-fn ensure_archive_schema(conn: &Connection) -> Result<()> {
+pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS archive (
             id INTEGER PRIMARY KEY,
