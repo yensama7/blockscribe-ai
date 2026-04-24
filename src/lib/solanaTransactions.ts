@@ -23,12 +23,34 @@ const toBase64 = (data: Uint8Array) => {
   return btoa(binary);
 };
 
+const normalizeSignedMessage = (signed: unknown): Uint8Array => {
+  if (signed instanceof Uint8Array) {
+    return signed;
+  }
+
+  if (signed && typeof signed === 'object') {
+    const maybeSignature = (signed as { signature?: unknown }).signature;
+    if (maybeSignature instanceof Uint8Array) {
+      return maybeSignature;
+    }
+    if (Array.isArray(maybeSignature)) {
+      return Uint8Array.from(maybeSignature);
+    }
+  }
+
+  if (Array.isArray(signed)) {
+    return Uint8Array.from(signed);
+  }
+
+  throw new Error('Wallet returned an unsupported signMessage payload');
+};
+
 export const sendMemoTransaction = async (wallet: SignableWallet, memoText: string): Promise<string> => {
   requireWallet(wallet);
 
   const payload = `memo:${memoText}`;
-  const signature = await wallet.signMessage!(encodeUtf8(payload));
-  return toBase64(signature);
+  const signed = await wallet.signMessage!(encodeUtf8(payload));
+  return toBase64(normalizeSignedMessage(signed));
 };
 
 export const sendFeeSplitTransfer = async (
@@ -50,6 +72,6 @@ export const sendFeeSplitTransfer = async (
     `developer_lamports=${developerLamports}`,
   ].join('|');
 
-  const signature = await wallet.signMessage!(encodeUtf8(payload));
-  return toBase64(signature);
+  const signed = await wallet.signMessage!(encodeUtf8(payload));
+  return toBase64(normalizeSignedMessage(signed));
 };

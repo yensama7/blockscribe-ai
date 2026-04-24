@@ -1,5 +1,5 @@
 const API_BASE_URL = 'http://127.0.0.1:5000';
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 60_000;
 
 const fetchWithTimeout = async (url: string, init?: RequestInit): Promise<Response> => {
   const controller = new AbortController();
@@ -37,6 +37,7 @@ export interface UploadResponse {
   status: string;
   metadata: { title?: string; difficulty?: string; genre?: string; summary?: string };
   file_record: { file_hash: string; file_cid: string };
+  memo_message?: string;
   solana_signature?: string;
   uploader_wallet?: string;
   access_type?: string;
@@ -99,6 +100,11 @@ export const api = {
     return normalizeMetadataRows(rows);
   },
 
+  getMetadataByWallet: async (walletAddress: string): Promise<ArchiveRecord[]> => {
+    const rows = await fetchJson<string[][]>(`/metadata/by-wallet?wallet=${encodeURIComponent(walletAddress)}`);
+    return normalizeMetadataRows(rows);
+  },
+
   getLibraryHighlights: async (): Promise<LibraryHighlights> => fetchJson<LibraryHighlights>('/library/highlights'),
 
   searchByTitle: async (query: string): Promise<ArchiveRecord[]> =>
@@ -120,6 +126,21 @@ export const api = {
 
     return response.json();
   },
+
+  confirmUploadSignature: async (
+    fileHash: string,
+    solanaSignature: string,
+    uploaderWallet: string,
+  ): Promise<{ status: string }> =>
+    fetchJson<{ status: string }>('/api/upload/confirm-signature', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_hash: fileHash,
+        solana_signature: solanaSignature,
+        uploader_wallet: uploaderWallet,
+      }),
+    }),
 
   verifyFileHash: async (hash: string): Promise<IntegrityCheckResult> =>
     fetchJson<IntegrityCheckResult>(`/integrity/check?hash=${encodeURIComponent(hash)}`),
