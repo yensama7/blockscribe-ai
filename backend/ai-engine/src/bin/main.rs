@@ -89,6 +89,14 @@ struct UploadSignatureRequest {
     uploader_wallet: String,
 }
 
+<<<<<<< codex/fix-multiple-document-upload-errors-g5uv91
+#[derive(Debug, Deserialize)]
+struct WalletMetadataQuery {
+    wallet: String,
+}
+
+=======
+>>>>>>> main
 #[derive(Debug, Serialize)]
 struct DownloadFeeResponse {
     settled: bool,
@@ -137,6 +145,52 @@ async fn list_all() -> impl Responder {
         Ok(Ok(rows)) => HttpResponse::Ok().json(rows),
         Ok(Err(e)) => { log_backend_error("/metadata db", &e.to_string()); HttpResponse::InternalServerError().body(format!("db error: {}", e)) },
         Err(e) => { log_backend_error("/metadata blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("blocking error: {}", e)) },
+    }
+}
+
+#[get("/metadata/by-wallet")]
+async fn list_by_wallet(query: web::Query<WalletMetadataQuery>) -> impl Responder {
+    let wallet = query.wallet.trim().to_string();
+    if wallet.is_empty() {
+        return HttpResponse::BadRequest().body("wallet query param is required");
+    }
+
+    let res = web::block(move || -> Result<Vec<Vec<String>>, rusqlite::Error> {
+        let conn = open_archive_db()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE COALESCE(uploader_wallet, '') = ?1 ORDER BY id DESC",
+        )?;
+
+        let rows = stmt.query_map([wallet], |row| {
+            Ok(vec![
+                row.get::<_, i64>(0)?.to_string(),
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                format!("{}|{}", row.get::<_, String>(5)?, row.get::<_, String>(6)?),
+                row.get(7)?,
+                row.get(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, i64>(10)?.to_string(),
+                row.get::<_, i64>(11)?.to_string(),
+                row.get::<_, String>(12)?,
+            ])
+        })?;
+        Ok(rows.flatten().collect())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(rows)) => HttpResponse::Ok().json(rows),
+        Ok(Err(e)) => {
+            log_backend_error("/metadata/by-wallet db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("db error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/metadata/by-wallet blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
+        }
     }
 }
 
@@ -611,6 +665,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .service(hello)
             .service(list_all)
+            .service(list_by_wallet)
             .service(search_by_field)
             .service(integrity_check)
             .service(settle_download_fee)

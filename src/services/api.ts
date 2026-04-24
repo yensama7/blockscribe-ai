@@ -100,6 +100,11 @@ export const api = {
     return normalizeMetadataRows(rows);
   },
 
+  getMetadataByWallet: async (walletAddress: string): Promise<ArchiveRecord[]> => {
+    const rows = await fetchJson<string[][]>(`/metadata/by-wallet?wallet=${encodeURIComponent(walletAddress)}`);
+    return normalizeMetadataRows(rows);
+  },
+
   getLibraryHighlights: async (): Promise<LibraryHighlights> => fetchJson<LibraryHighlights>('/library/highlights'),
 
   searchByTitle: async (query: string): Promise<ArchiveRecord[]> =>

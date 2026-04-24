@@ -1,6 +1,20 @@
 use crate::nlp::engine::{ExtractedMetaData, FileRecord};
 use rusqlite::{Connection, Result};
 
+<<<<<<< codex/fix-multiple-document-upload-errors-g5uv91
+fn archive_has_column(conn: &Connection, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare("PRAGMA table_info(archive)")?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for item in columns {
+        if item? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+=======
+>>>>>>> main
 pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS archive (
@@ -26,12 +40,33 @@ pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
         (),
     )?;
 
-    let _ = conn.execute("ALTER TABLE archive ADD COLUMN uploader_wallet TEXT", ());
-    let _ = conn.execute("ALTER TABLE archive ADD COLUMN solana_signature TEXT", ());
-    let _ = conn.execute("ALTER TABLE archive ADD COLUMN access_type TEXT NOT NULL DEFAULT 'open'", ());
-    let _ = conn.execute("ALTER TABLE archive ADD COLUMN publish_fee_lamports INTEGER NOT NULL DEFAULT 1000", ());
-    let _ = conn.execute("ALTER TABLE archive ADD COLUMN search_count INTEGER NOT NULL DEFAULT 0", ());
-    let _ = conn.execute("ALTER TABLE archive ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP", ());
+    if !archive_has_column(conn, "uploader_wallet")? {
+        conn.execute("ALTER TABLE archive ADD COLUMN uploader_wallet TEXT", ())?;
+    }
+    if !archive_has_column(conn, "solana_signature")? {
+        conn.execute("ALTER TABLE archive ADD COLUMN solana_signature TEXT", ())?;
+    }
+    if !archive_has_column(conn, "access_type")? {
+        conn.execute("ALTER TABLE archive ADD COLUMN access_type TEXT", ())?;
+    }
+    if !archive_has_column(conn, "publish_fee_lamports")? {
+        conn.execute("ALTER TABLE archive ADD COLUMN publish_fee_lamports INTEGER", ())?;
+    }
+    if !archive_has_column(conn, "search_count")? {
+        conn.execute("ALTER TABLE archive ADD COLUMN search_count INTEGER", ())?;
+    }
+    if !archive_has_column(conn, "created_at")? {
+        conn.execute("ALTER TABLE archive ADD COLUMN created_at TEXT", ())?;
+    }
+
+    conn.execute(
+        "UPDATE archive
+         SET access_type = COALESCE(access_type, 'open'),
+             publish_fee_lamports = COALESCE(publish_fee_lamports, 1000),
+             search_count = COALESCE(search_count, 0),
+             created_at = COALESCE(created_at, CURRENT_TIMESTAMP)",
+        (),
+    )?;
 
     Ok(())
 }
