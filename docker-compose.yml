@@ -41,7 +41,7 @@ services:
     volumes:
       - ./:/app
     # Install dependencies and run directly, skipping the virtual env
-    command: sh -c "pip install -r requirements.txt && python vector_service.py"
+    command: sh -c "pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r requirements.txt && python vector_service.py"
     ports:
       - "8001:8001"
 
