@@ -543,7 +543,7 @@ async fn library_highlights() -> impl Responder {
 #[get("/analytics/difficulty")]
 async fn difficulty() -> impl Responder {
     let client = Client::new();
-    match client.get("http://127.0.0.1:8001/analytics/difficulty").send().await {
+    match client.get("http://0.0.0.0:8001/analytics/difficulty").send().await {
         Ok(resp) => match resp.json::<Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
             Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
@@ -555,7 +555,7 @@ async fn difficulty() -> impl Responder {
 #[get("/analytics/genre")]
 async fn genre() -> impl Responder {
     let client = Client::new();
-    match client.get("http://127.0.0.1:8001/analytics/genre").send().await {
+    match client.get("http://0.0.0.0:8001/analytics/genre").send().await {
         Ok(resp) => match resp.json::<Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
             Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
@@ -568,7 +568,7 @@ async fn genre() -> impl Responder {
 async fn clusters(query: web::Query<HashMap<String, String>>) -> impl Responder {
     let client = Client::new();
     let n = query.get("n").cloned().unwrap_or_else(|| "3".to_string());
-    let url = format!("http://127.0.0.1:8001/analytics/clusters?n={}", n);
+    let url = format!("http://0.0.0.0:8001/analytics/clusters?n={}", n);
 
     match client.get(&url).send().await {
         Ok(resp) => match resp.json::<Value>().await {
@@ -587,7 +587,7 @@ async fn search(payload: web::Json<VectorSearchRequest>) -> impl Responder {
         "k": payload.k.unwrap_or(3),
     });
 
-    match client.post("http://127.0.0.1:8001/search").json(&body).send().await {
+    match client.post("http://0.0.0.0:8001/search").json(&body).send().await {
         Ok(resp) => match resp.json::<VectorSearchResult>().await {
             Ok(json) => HttpResponse::Ok().json(json),
             Err(_) => HttpResponse::InternalServerError().body("Invalid response from vector service"),
@@ -784,7 +784,7 @@ async fn main() -> std::io::Result<()> {
                 origin
                     .to_str()
                     .map(|value| {
-                        value.starts_with("http://127.0.0.1:") || value.starts_with("http://localhost:")
+                        value.starts_with("http://0.0.0.0:") || value.starts_with("http://localhost:")
                     })
                     .unwrap_or(false)
             })
@@ -816,7 +816,7 @@ async fn main() -> std::io::Result<()> {
             .service(confirm_upload_signature)
             .route("/health", web::get().to(|| async { HttpResponse::Ok().body("OK") }))
     })
-    .bind(("127.0.0.1", 5000))?
+    .bind(("0.0.0.0", 5000))?
     .run()
     .await
 }
