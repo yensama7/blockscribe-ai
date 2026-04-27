@@ -15,7 +15,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use ai_engine::{
-    add_to_or_create_database, get_meta_data_response, package_hash_and_cid, send_memo, ExtractedMetaData,
+    add_to_or_create_database, ensure_archive_schema, get_meta_data_response, package_hash_and_cid, ExtractedMetaData,
     FileRecord,
 };
 
@@ -25,6 +25,11 @@ fn log_backend_error(context: &str, error: &str) {
     eprintln!("[backend-error] {}: {}", context, error);
 }
 
+fn open_archive_db() -> Result<Connection, rusqlite::Error> {
+    let conn = Connection::open(DB_NAME)?;
+    ensure_archive_schema(&conn)?;
+    Ok(conn)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ArchiveRecord {
@@ -77,6 +82,42 @@ struct DownloadFeeRequest {
     downloader_wallet: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct UploadSignatureRequest {
+    file_hash: String,
+    solana_signature: String,
+    uploader_wallet: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WalletMetadataQuery {
+    wallet: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatQuery {
+    author_wallet: String,
+    reader_wallet: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatMessageCreate {
+    author_wallet: String,
+    reader_wallet: String,
+    sender_wallet: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatMessage {
+    id: i64,
+    author_wallet: String,
+    reader_wallet: String,
+    sender_wallet: String,
+    message: String,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 struct DownloadFeeResponse {
     settled: bool,
@@ -94,8 +135,8 @@ async fn hello() -> impl Responder {
 
 #[get("/metadata")]
 async fn list_all() -> impl Responder {
-    let res = web::block(move || -> Result<Vec<Vec<String>>, anyhow::Error> {
-        let conn = Connection::open(DB_NAME)?;
+    let res = web::block(move || -> Result<Vec<Vec<String>>, rusqlite::Error> {
+        let conn = open_archive_db()?;
         let mut stmt = conn.prepare(
             "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive ORDER BY id DESC",
         )?;
@@ -125,6 +166,162 @@ async fn list_all() -> impl Responder {
         Ok(Ok(rows)) => HttpResponse::Ok().json(rows),
         Ok(Err(e)) => { log_backend_error("/metadata db", &e.to_string()); HttpResponse::InternalServerError().body(format!("db error: {}", e)) },
         Err(e) => { log_backend_error("/metadata blocking", &e.to_string()); HttpResponse::InternalServerError().body(format!("blocking error: {}", e)) },
+    }
+}
+
+#[get("/metadata/by-wallet")]
+async fn list_by_wallet(query: web::Query<WalletMetadataQuery>) -> impl Responder {
+    let wallet = query.wallet.trim().to_string();
+    if wallet.is_empty() {
+        return HttpResponse::BadRequest().body("wallet query param is required");
+    }
+
+    let res = web::block(move || -> Result<Vec<Vec<String>>, rusqlite::Error> {
+        let conn = open_archive_db()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE COALESCE(uploader_wallet, '') = ?1 ORDER BY id DESC",
+        )?;
+
+        let rows = stmt.query_map([wallet], |row| {
+            Ok(vec![
+                row.get::<_, i64>(0)?.to_string(),
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                format!("{}|{}", row.get::<_, String>(5)?, row.get::<_, String>(6)?),
+                row.get(7)?,
+                row.get(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, i64>(10)?.to_string(),
+                row.get::<_, i64>(11)?.to_string(),
+                row.get::<_, String>(12)?,
+            ])
+        })?;
+        Ok(rows.flatten().collect())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(rows)) => HttpResponse::Ok().json(rows),
+        Ok(Err(e)) => {
+            log_backend_error("/metadata/by-wallet db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("db error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/metadata/by-wallet blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
+        }
+    }
+}
+
+fn ensure_chat_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS author_chat_messages (
+            id INTEGER PRIMARY KEY,
+            author_wallet TEXT NOT NULL,
+            reader_wallet TEXT NOT NULL,
+            sender_wallet TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+        (),
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_author_chat_participants ON author_chat_messages(author_wallet, reader_wallet, created_at)",
+        (),
+    )?;
+
+    conn.execute(
+        "DELETE FROM author_chat_messages WHERE created_at < datetime('now', '-48 hours')",
+        (),
+    )?;
+
+    Ok(())
+}
+
+#[get("/chat/messages")]
+async fn get_chat_messages(query: web::Query<ChatQuery>) -> impl Responder {
+    let author_wallet = query.author_wallet.trim().to_string();
+    let reader_wallet = query.reader_wallet.trim().to_string();
+    if author_wallet.is_empty() || reader_wallet.is_empty() {
+        return HttpResponse::BadRequest().body("author_wallet and reader_wallet are required");
+    }
+
+    let res = web::block(move || -> Result<Vec<ChatMessage>, rusqlite::Error> {
+        let conn = open_archive_db()?;
+        ensure_chat_schema(&conn)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, author_wallet, reader_wallet, sender_wallet, message, created_at
+             FROM author_chat_messages
+             WHERE author_wallet = ?1 AND reader_wallet = ?2
+             ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![author_wallet, reader_wallet], |row| {
+            Ok(ChatMessage {
+                id: row.get(0)?,
+                author_wallet: row.get(1)?,
+                reader_wallet: row.get(2)?,
+                sender_wallet: row.get(3)?,
+                message: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.flatten().collect())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(messages)) => HttpResponse::Ok().json(messages),
+        Ok(Err(e)) => {
+            log_backend_error("/chat/messages db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("db error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/chat/messages blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
+        }
+    }
+}
+
+#[post("/chat/messages")]
+async fn create_chat_message(payload: web::Json<ChatMessageCreate>) -> impl Responder {
+    let author_wallet = payload.author_wallet.trim().to_string();
+    let reader_wallet = payload.reader_wallet.trim().to_string();
+    let sender_wallet = payload.sender_wallet.trim().to_string();
+    let message = payload.message.trim().to_string();
+
+    if author_wallet.is_empty() || reader_wallet.is_empty() || sender_wallet.is_empty() || message.is_empty() {
+        return HttpResponse::BadRequest().body("author_wallet, reader_wallet, sender_wallet, and message are required");
+    }
+
+    if sender_wallet != author_wallet && sender_wallet != reader_wallet {
+        return HttpResponse::BadRequest().body("sender_wallet must match author_wallet or reader_wallet");
+    }
+
+    let res = web::block(move || -> Result<(), rusqlite::Error> {
+        let conn = open_archive_db()?;
+        ensure_chat_schema(&conn)?;
+        conn.execute(
+            "INSERT INTO author_chat_messages (author_wallet, reader_wallet, sender_wallet, message)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![author_wallet, reader_wallet, sender_wallet, message],
+        )?;
+        Ok(())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(())) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
+        Ok(Err(e)) => {
+            log_backend_error("/chat/messages create db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("db error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/chat/messages create blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
+        }
     }
 }
 
@@ -161,7 +358,7 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
     );
 
     let res = web::block(move || -> Result<Vec<ArchiveRecord>, rusqlite::Error> {
-        let conn = Connection::open(DB_NAME)?;
+        let conn = open_archive_db()?;
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([pattern], |row| {
             Ok(ArchiveRecord {
@@ -210,7 +407,7 @@ async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Res
     };
 
     let res = web::block(move || -> Result<Option<ArchiveRecord>, rusqlite::Error> {
-        let conn = Connection::open(DB_NAME)?;
+        let conn = open_archive_db()?;
         let mut stmt = conn.prepare(
             "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE file_hash = ?1 LIMIT 1",
         )?;
@@ -263,7 +460,7 @@ async fn settle_download_fee(payload: web::Json<DownloadFeeRequest>) -> impl Res
     }
 
     let res = web::block(move || -> Result<Option<String>, rusqlite::Error> {
-        let conn = Connection::open(DB_NAME)?;
+        let conn = open_archive_db()?;
         let wallet = conn
             .query_row(
                 "SELECT uploader_wallet FROM archive WHERE id = ?1",
@@ -302,7 +499,7 @@ async fn settle_download_fee(payload: web::Json<DownloadFeeRequest>) -> impl Res
 #[get("/library/highlights")]
 async fn library_highlights() -> impl Responder {
     let res = web::block(move || -> Result<LibraryHighlightsResponse, rusqlite::Error> {
-        let conn = Connection::open(DB_NAME)?;
+        let conn = open_archive_db()?;
 
         let fetch_records = |query: &str| -> Result<Vec<ArchiveRecord>, rusqlite::Error> {
             let mut stmt = conn.prepare(query)?;
@@ -490,30 +687,15 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
         Err(e) => return Ok(HttpResponse::InternalServerError().body(format!("File packaging failed: {}", e))),
     };
 
-    let file_record_clone = file_record.clone();
-    let memo_sig = match tokio::task::spawn_blocking(move || {
-        send_memo(&file_record_clone.file_hash, &file_record_clone.file_cid).map_err(|e| e.to_string())
-    })
-    .await
-    {
-        Ok(Ok(sig)) => sig,
-        Ok(Err(e)) => { log_backend_error("/api/upload solana", &e); return Ok(HttpResponse::InternalServerError().body(format!("Solana memo failed: {}", e))); },
-        Err(join_err) => {
-            log_backend_error("/api/upload solana join", &join_err.to_string());
-            return Ok(HttpResponse::InternalServerError().body(format!("Join error in Solana memo: {}", join_err)));
-        }
-    };
-
     let metadata_clone = metadata.clone();
     let file_record_clone2 = file_record.clone();
     let wallet_clone = uploader_wallet.clone();
-    let memo_clone = memo_sig.clone();
     let db_res = tokio::task::spawn_blocking(move || {
         add_to_or_create_database(
             &metadata_clone,
             &file_record_clone2,
             &wallet_clone,
-            &memo_clone,
+            "",
             DB_NAME.to_string(),
         )
         .map_err(|e| e.to_string())
@@ -523,18 +705,25 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     match db_res {
         Ok(Ok(_)) => {
             let _ = Connection::open(DB_NAME).and_then(|conn| {
+                let _ = ensure_archive_schema(&conn);
                 conn.execute(
                     "UPDATE archive SET access_type = ?1, publish_fee_lamports = ?2, created_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE file_hash = ?3",
                     params![access_type, publish_fee_lamports, file_record.file_hash.clone()],
                 )
             });
 
+            let memo_message = format!(
+                "book_hash:{};ipfs_cid:{}",
+                file_record.file_hash.clone(),
+                file_record.file_cid.clone()
+            );
+
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "status": "success",
                 "original_filename": original_filename_opt,
                 "metadata": metadata,
                 "file_record": file_record,
-                "solana_signature": memo_sig,
+                "memo_message": memo_message,
                 "uploader_wallet": uploader_wallet,
                 "access_type": access_type,
                 "publish_fee_lamports": publish_fee_lamports
@@ -545,8 +734,50 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     }
 }
 
+#[post("/api/upload/confirm-signature")]
+async fn confirm_upload_signature(payload: web::Json<UploadSignatureRequest>) -> impl Responder {
+    if payload.file_hash.trim().is_empty() || payload.solana_signature.trim().is_empty() || payload.uploader_wallet.trim().is_empty() {
+        return HttpResponse::BadRequest().body("file_hash, solana_signature, and uploader_wallet are required");
+    }
+
+    let file_hash = payload.file_hash.clone();
+    let signature = payload.solana_signature.clone();
+    let uploader_wallet = payload.uploader_wallet.clone();
+
+    let res = web::block(move || -> Result<usize, rusqlite::Error> {
+        let conn = open_archive_db()?;
+        conn.execute(
+            "UPDATE archive SET solana_signature = ?1, uploader_wallet = ?2 WHERE file_hash = ?3",
+            params![signature, uploader_wallet, file_hash],
+        )
+    })
+    .await;
+
+    match res {
+        Ok(Ok(rows)) if rows > 0 => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
+        Ok(Ok(_)) => HttpResponse::NotFound().body("file hash not found"),
+        Ok(Err(e)) => {
+            log_backend_error("/api/upload/confirm-signature db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("DB error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/api/upload/confirm-signature blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("Blocking error: {}", e))
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    if let Err(e) = open_archive_db() {
+        log_backend_error("startup schema migration", &e.to_string());
+    }
+    if let Ok(conn) = Connection::open(DB_NAME) {
+        if let Err(e) = ensure_chat_schema(&conn) {
+            log_backend_error("startup chat schema migration", &e.to_string());
+        }
+    }
+
     HttpServer::new(|| {
         let cors = Cors::default()
             .allowed_origin_fn(|origin, _req_head| {
@@ -570,6 +801,9 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .service(hello)
             .service(list_all)
+            .service(list_by_wallet)
+            .service(get_chat_messages)
+            .service(create_chat_message)
             .service(search_by_field)
             .service(integrity_check)
             .service(settle_download_fee)
@@ -579,6 +813,7 @@ async fn main() -> std::io::Result<()> {
             .service(genre)
             .service(clusters)
             .service(upload)
+            .service(confirm_upload_signature)
             .route("/health", web::get().to(|| async { HttpResponse::Ok().body("OK") }))
     })
     .bind(("127.0.0.1", 5000))?
