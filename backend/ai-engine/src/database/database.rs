@@ -12,6 +12,7 @@ fn archive_has_column(conn: &Connection, column: &str) -> Result<bool> {
     Ok(false)
 }
 
+
 pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS archive (

@@ -30,6 +30,11 @@ export const BlockchainUI = () => {
     queryKey: ['library-metadata'],
     queryFn: api.getAllMetadata,
   });
+  const { data: myUploads = [], isLoading: myUploadsLoading } = useQuery({
+    queryKey: ['library-metadata-by-wallet', walletAddress],
+    queryFn: () => api.getMetadataByWallet(walletAddress),
+    enabled: Boolean(walletAddress),
+  });
 
   const uploadMutation = useMutation({
     mutationFn: async ({ file, wallet }: { file: File; wallet: string }) => {
@@ -144,6 +149,28 @@ export const BlockchainUI = () => {
               <Button size="sm" onClick={() => handleDownload(record)}>
                 <Download className="mr-1 h-4 w-4" /> Get <ExternalLink className="ml-1 h-4 w-4" />
               </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>My Wallet Memos</CardTitle>
+          <CardDescription>Uploads indexed by your connected wallet address.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!walletAddress && <p className="text-sm text-muted-foreground">Connect wallet to view your published memos.</p>}
+          {walletAddress && myUploadsLoading && <p className="text-sm text-muted-foreground">Loading your memos...</p>}
+          {walletAddress && !myUploadsLoading && myUploads.length === 0 && (
+            <p className="text-sm text-muted-foreground">No uploads found for this wallet yet.</p>
+          )}
+          {myUploads.slice(0, 6).map((record) => (
+            <div key={`wallet-${record.id}`} className="rounded border border-border/40 px-3 py-2">
+              <p className="font-medium">{record.title}</p>
+              <p className="text-xs break-all text-muted-foreground">
+                wallet: {record.uploader_wallet || 'unknown'} • memo signature: {record.solana_signature || 'pending'}
+              </p>
             </div>
           ))}
         </CardContent>
