@@ -1,7 +1,6 @@
 use crate::nlp::engine::{ExtractedMetaData, FileRecord};
 use rusqlite::{Connection, Result};
 
-<<<<<<< codex/fix-multiple-document-upload-errors-g5uv91
 fn archive_has_column(conn: &Connection, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare("PRAGMA table_info(archive)")?;
     let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
@@ -13,8 +12,7 @@ fn archive_has_column(conn: &Connection, column: &str) -> Result<bool> {
     Ok(false)
 }
 
-=======
->>>>>>> main
+
 pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS archive (

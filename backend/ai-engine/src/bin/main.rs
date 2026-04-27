@@ -89,14 +89,35 @@ struct UploadSignatureRequest {
     uploader_wallet: String,
 }
 
-<<<<<<< codex/fix-multiple-document-upload-errors-g5uv91
 #[derive(Debug, Deserialize)]
 struct WalletMetadataQuery {
     wallet: String,
 }
 
-=======
->>>>>>> main
+#[derive(Debug, Deserialize)]
+struct ChatQuery {
+    author_wallet: String,
+    reader_wallet: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatMessageCreate {
+    author_wallet: String,
+    reader_wallet: String,
+    sender_wallet: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatMessage {
+    id: i64,
+    author_wallet: String,
+    reader_wallet: String,
+    sender_wallet: String,
+    message: String,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 struct DownloadFeeResponse {
     settled: bool,
@@ -189,6 +210,116 @@ async fn list_by_wallet(query: web::Query<WalletMetadataQuery>) -> impl Responde
         }
         Err(e) => {
             log_backend_error("/metadata/by-wallet blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
+        }
+    }
+}
+
+fn ensure_chat_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS author_chat_messages (
+            id INTEGER PRIMARY KEY,
+            author_wallet TEXT NOT NULL,
+            reader_wallet TEXT NOT NULL,
+            sender_wallet TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+        (),
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_author_chat_participants ON author_chat_messages(author_wallet, reader_wallet, created_at)",
+        (),
+    )?;
+
+    conn.execute(
+        "DELETE FROM author_chat_messages WHERE created_at < datetime('now', '-48 hours')",
+        (),
+    )?;
+
+    Ok(())
+}
+
+#[get("/chat/messages")]
+async fn get_chat_messages(query: web::Query<ChatQuery>) -> impl Responder {
+    let author_wallet = query.author_wallet.trim().to_string();
+    let reader_wallet = query.reader_wallet.trim().to_string();
+    if author_wallet.is_empty() || reader_wallet.is_empty() {
+        return HttpResponse::BadRequest().body("author_wallet and reader_wallet are required");
+    }
+
+    let res = web::block(move || -> Result<Vec<ChatMessage>, rusqlite::Error> {
+        let conn = open_archive_db()?;
+        ensure_chat_schema(&conn)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, author_wallet, reader_wallet, sender_wallet, message, created_at
+             FROM author_chat_messages
+             WHERE author_wallet = ?1 AND reader_wallet = ?2
+             ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![author_wallet, reader_wallet], |row| {
+            Ok(ChatMessage {
+                id: row.get(0)?,
+                author_wallet: row.get(1)?,
+                reader_wallet: row.get(2)?,
+                sender_wallet: row.get(3)?,
+                message: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.flatten().collect())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(messages)) => HttpResponse::Ok().json(messages),
+        Ok(Err(e)) => {
+            log_backend_error("/chat/messages db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("db error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/chat/messages blocking", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
+        }
+    }
+}
+
+#[post("/chat/messages")]
+async fn create_chat_message(payload: web::Json<ChatMessageCreate>) -> impl Responder {
+    let author_wallet = payload.author_wallet.trim().to_string();
+    let reader_wallet = payload.reader_wallet.trim().to_string();
+    let sender_wallet = payload.sender_wallet.trim().to_string();
+    let message = payload.message.trim().to_string();
+
+    if author_wallet.is_empty() || reader_wallet.is_empty() || sender_wallet.is_empty() || message.is_empty() {
+        return HttpResponse::BadRequest().body("author_wallet, reader_wallet, sender_wallet, and message are required");
+    }
+
+    if sender_wallet != author_wallet && sender_wallet != reader_wallet {
+        return HttpResponse::BadRequest().body("sender_wallet must match author_wallet or reader_wallet");
+    }
+
+    let res = web::block(move || -> Result<(), rusqlite::Error> {
+        let conn = open_archive_db()?;
+        ensure_chat_schema(&conn)?;
+        conn.execute(
+            "INSERT INTO author_chat_messages (author_wallet, reader_wallet, sender_wallet, message)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![author_wallet, reader_wallet, sender_wallet, message],
+        )?;
+        Ok(())
+    })
+    .await;
+
+    match res {
+        Ok(Ok(())) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
+        Ok(Err(e)) => {
+            log_backend_error("/chat/messages create db", &e.to_string());
+            HttpResponse::InternalServerError().body(format!("db error: {}", e))
+        }
+        Err(e) => {
+            log_backend_error("/chat/messages create blocking", &e.to_string());
             HttpResponse::InternalServerError().body(format!("blocking error: {}", e))
         }
     }
@@ -641,6 +772,11 @@ async fn main() -> std::io::Result<()> {
     if let Err(e) = open_archive_db() {
         log_backend_error("startup schema migration", &e.to_string());
     }
+    if let Ok(conn) = Connection::open(DB_NAME) {
+        if let Err(e) = ensure_chat_schema(&conn) {
+            log_backend_error("startup chat schema migration", &e.to_string());
+        }
+    }
 
     HttpServer::new(|| {
         let cors = Cors::default()
@@ -666,6 +802,8 @@ async fn main() -> std::io::Result<()> {
             .service(hello)
             .service(list_all)
             .service(list_by_wallet)
+            .service(get_chat_messages)
+            .service(create_chat_message)
             .service(search_by_field)
             .service(integrity_check)
             .service(settle_download_fee)

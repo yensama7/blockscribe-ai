@@ -8,6 +8,7 @@ import { AppLayout } from '@/components/AppLayout';
 import Index from './pages/Index';
 import Books from './pages/Books';
 import HotBooks from './pages/HotBooks';
+import MyAccount from './pages/MyAccount';
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient({
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/books" element={<Books />} />
               <Route path="/hot" element={<HotBooks />} />
+              <Route path="/account" element={<MyAccount />} />
               <Route path="/home" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

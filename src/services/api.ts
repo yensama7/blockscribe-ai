@@ -65,6 +65,15 @@ export interface LibraryHighlights {
   random: ArchiveRecord[];
 }
 
+export interface AuthorChatMessage {
+  id: number;
+  author_wallet: string;
+  reader_wallet: string;
+  sender_wallet: string;
+  message: string;
+  created_at: string;
+}
+
 const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
@@ -150,6 +159,28 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ record_id: recordId, downloader_wallet: downloaderWallet }),
+    }),
+
+  getChatMessages: async (authorWallet: string, readerWallet: string): Promise<AuthorChatMessage[]> =>
+    fetchJson<AuthorChatMessage[]>(
+      `/chat/messages?author_wallet=${encodeURIComponent(authorWallet)}&reader_wallet=${encodeURIComponent(readerWallet)}`,
+    ),
+
+  postChatMessage: async (
+    authorWallet: string,
+    readerWallet: string,
+    senderWallet: string,
+    message: string,
+  ): Promise<{ status: string }> =>
+    fetchJson<{ status: string }>('/chat/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        author_wallet: authorWallet,
+        reader_wallet: readerWallet,
+        sender_wallet: senderWallet,
+        message,
+      }),
     }),
 
 };

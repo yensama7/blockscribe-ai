@@ -3,13 +3,15 @@ import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
 export type WalletProviderName = 'Phantom' | 'Backpack' | 'Solflare' | 'Glow' | 'Exodus' | 'Wallet';
 
 export interface SolanaProvider {
+  publicKey?: { toString: () => string };
   isPhantom?: boolean;
   isBackpack?: boolean;
   isSolflare?: boolean;
   isGlow?: boolean;
   isExodus?: boolean;
   connect: () => Promise<{ publicKey: { toString: () => string } }>;
-  signTransaction?: (tx: any) => Promise<any>;
+  signTransaction?: (tx: unknown) => Promise<unknown>;
+  signAndSendTransaction?: (tx: unknown) => Promise<{ signature: string } | string>;
   signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
   disconnect?: () => Promise<void>;
 }

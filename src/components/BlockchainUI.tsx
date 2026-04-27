@@ -54,7 +54,6 @@ export const BlockchainUI = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-metadata'] });
       queryClient.invalidateQueries({ queryKey: ['library-highlights'] });
-      queryClient.invalidateQueries({ queryKey: ['library-metadata-by-wallet'] });
       toast({ title: 'Uploaded', description: 'Document uploaded, memo signed, and metadata saved.' });
     },
     onError: (error) => {

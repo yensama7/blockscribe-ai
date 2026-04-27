@@ -37,6 +37,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
             <Link to="/" className="font-semibold text-lg">Blockscribe</Link>
             <Link to="/books" className="text-sm text-muted-foreground hover:text-foreground">All Books A–Z</Link>
             <Link to="/hot" className="text-sm text-muted-foreground hover:text-foreground">Hot Books</Link>
+            <Link to="/account" className="text-sm text-muted-foreground hover:text-foreground">My Account</Link>
           </div>
 
           <div className="flex items-center gap-2">
