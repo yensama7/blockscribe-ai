@@ -19,14 +19,6 @@ services:
     depends_on:
       - rust-backend
 
-  python-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile.python
-    container_name: blockscribe_python
-    ports:
-      - "8001:8001"
-
   rust-backend:
     build:
       context: ./backend/ai-engine
@@ -38,7 +30,6 @@ services:
       - ./backend:/app/backend
     depends_on:
       - ipfs
-      - python-engine
 
 volumes:
   ipfs_data:

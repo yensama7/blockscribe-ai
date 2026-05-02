@@ -2,11 +2,9 @@ use actix_cors::Cors;
 use actix_multipart::Multipart;
 use actix_web::{get, http, post, web, App, Error, HttpResponse, HttpServer, Responder};
 use futures_util::StreamExt;
-use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use sanitize_filename::sanitize;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::Path;
@@ -55,19 +53,6 @@ struct LibraryHighlightsResponse {
     random: Vec<ArchiveRecord>,
 }
 
-#[derive(Debug, Deserialize)]
-struct VectorSearchRequest {
-    query: String,
-    k: Option<usize>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct VectorSearchResult {
-    id: Vec<Vec<String>>,
-    documents: Vec<Vec<String>>,
-    metadatas: Vec<Vec<Value>>,
-    distances: Vec<Vec<f32>>,
-}
 
 #[derive(Debug, Serialize)]
 struct IntegrityCheckResponse {
@@ -549,65 +534,7 @@ async fn library_highlights() -> impl Responder {
     }
 }
 
-#[get("/analytics/difficulty")]
-async fn difficulty() -> impl Responder {
-    let client = Client::new();
-    match client.get("http://0.0.0.0:8001/analytics/difficulty").send().await {
-        Ok(resp) => match resp.json::<Value>().await {
-            Ok(json) => HttpResponse::Ok().json(json),
-            Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
-        },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
-    }
-}
-
-#[get("/analytics/genre")]
-async fn genre() -> impl Responder {
-    let client = Client::new();
-    match client.get("http://0.0.0.0:8001/analytics/genre").send().await {
-        Ok(resp) => match resp.json::<Value>().await {
-            Ok(json) => HttpResponse::Ok().json(json),
-            Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
-        },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
-    }
-}
-
-#[get("/analytics/clusters")]
-async fn clusters(query: web::Query<HashMap<String, String>>) -> impl Responder {
-    let client = Client::new();
-    let n = query.get("n").cloned().unwrap_or_else(|| "3".to_string());
-    let url = format!("http://0.0.0.0:8001/analytics/clusters?n={}", n);
-
-    match client.get(&url).send().await {
-        Ok(resp) => match resp.json::<Value>().await {
-            Ok(json) => HttpResponse::Ok().json(json),
-            Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
-        },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
-    }
-}
-
-#[post("/ai-search")]
-async fn search(payload: web::Json<VectorSearchRequest>) -> impl Responder {
-    let client = Client::new();
-    let body = serde_json::json!({
-        "query": payload.query,
-        "k": payload.k.unwrap_or(3),
-    });
-
-    match client.post("http://0.0.0.0:8001/search").json(&body).send().await {
-        Ok(resp) => match resp.json::<VectorSearchResult>().await {
-            Ok(json) => HttpResponse::Ok().json(json),
-            Err(_) => HttpResponse::InternalServerError().body("Invalid response from vector service"),
-        },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
-    }
-}
-
-#[post("/api/upload")]
-#[post("/upload")]
-async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
+async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
     let _ = std::fs::create_dir_all("./uploads");
 
     let mut wallet_address: Option<String> = None;
@@ -747,6 +674,16 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     }
 }
 
+#[post("/api/upload")]
+async fn upload_api(payload: Multipart) -> Result<HttpResponse, Error> {
+    upload_inner(payload).await
+}
+
+#[post("/upload")]
+async fn upload(payload: Multipart) -> Result<HttpResponse, Error> {
+    upload_inner(payload).await
+}
+
 #[post("/api/upload/confirm-signature")]
 async fn confirm_upload_signature(payload: web::Json<UploadSignatureRequest>) -> impl Responder {
     if payload.file_hash.trim().is_empty() || payload.solana_signature.trim().is_empty() || payload.uploader_wallet.trim().is_empty() {
@@ -866,10 +803,7 @@ async fn main() -> std::io::Result<()> {
             .service(integrity_check)
             .service(settle_download_fee)
             .service(library_highlights)
-            .service(search)
-            .service(difficulty)
-            .service(genre)
-            .service(clusters)
+            .service(upload_api)
             .service(upload)
             .service(confirm_upload_signature)
             .service(register)
