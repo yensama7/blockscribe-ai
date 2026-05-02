@@ -8,13 +8,6 @@ services:
     volumes:
       - ipfs_data:/data/ipfs
 
-  solana:
-    image: solanalabs/solana:stable
-    command: solana-test-validator --rpc-bind-address 0.0.0.0
-    ports:
-      - "8899:8899"
-      - "8900:8900"
-
   frontend:
     build:
       context: .
@@ -22,7 +15,7 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./frontend:/app   # live editing
+      - ./:/app   # live editing
     depends_on:
       - rust-backend
 
@@ -45,7 +38,6 @@ services:
       - ./backend:/app/backend
     depends_on:
       - ipfs
-      - solana
       - python-engine
 
 volumes:
