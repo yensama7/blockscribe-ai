@@ -137,6 +137,7 @@ pub async fn compute_sha256_hex<P: AsRef<Path>>(path: P) -> anyhow::Result<Strin
 }
 
 async fn upload_file_to_ipfs_kubo<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
+    dotenv().ok();
     let bytes = fs::read(&path).await?;
     let filename = path
         .as_ref()
@@ -148,8 +149,15 @@ async fn upload_file_to_ipfs_kubo<P: AsRef<Path>>(path: P) -> anyhow::Result<Str
     let part = Part::bytes(bytes).file_name(filename);
     let form = Form::new().part("file", part);
 
+    let ipfs_api_url = env::var("IPFS_API_URL")
+        .unwrap_or_else(|_| "http://ipfs:5001".to_string());
+    let ipfs_add_url = format!(
+        "{}/api/v0/add",
+        ipfs_api_url.trim_end_matches('/')
+    );
+
     let resp_text = Client::new()
-        .post("http://127.0.0.1:5001/api/v0/add")
+        .post(&ipfs_add_url)
         .multipart(form)
         .send()
         .await?

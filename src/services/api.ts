@@ -36,8 +36,9 @@ export interface ArchiveRecord {
 export interface UploadResponse {
   status: string;
   metadata: { title?: string; difficulty?: string; genre?: string; summary?: string };
-  file_record: { file_hash: string; file_cid: string };
-  memo_message?: string;
+  ipfs_cid: string;
+  file_hash: string;
+  memo?: string;
   solana_signature?: string;
   uploader_wallet?: string;
   access_type?: string;
@@ -124,13 +125,16 @@ export const api = {
     formData.append('wallet_address', walletAddress);
     formData.append('file', file);
 
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/upload`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/upload`, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Upload failed (${response.status}): ${response.statusText}`);
+      const errorBody = await response.text();
+      throw new Error(
+        `Upload failed (${response.status}): ${errorBody || response.statusText}`,
+      );
     }
 
     return response.json();
@@ -149,6 +153,19 @@ export const api = {
         solana_signature: solanaSignature,
         uploader_wallet: uploaderWallet,
       }),
+    }),
+
+  registerRecord: async (payload: {
+    wallet_address: string;
+    metadata: { title: string; difficulty: string; genre: string; summary: string; keywords?: string[] };
+    ipfs_cid: string;
+    file_hash: string;
+    memo_pointer: string;
+  }): Promise<{ status: string }> =>
+    fetchJson<{ status: string }>('/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     }),
 
   verifyFileHash: async (hash: string): Promise<IntegrityCheckResult> =>

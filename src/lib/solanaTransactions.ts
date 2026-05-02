@@ -73,10 +73,16 @@ export const sendMemoTransaction = async (wallet: SignableWallet, memoText: stri
   }).add(memoIx);
 
   if (wallet.signAndSendTransaction) {
-    const txResult = await wallet.signAndSendTransaction(tx);
-    const signature = typeof txResult === 'string' ? txResult : txResult.signature;
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
-    return signature;
+    try {
+      const txResult = await wallet.signAndSendTransaction(tx);
+      const signature = typeof txResult === 'string' ? txResult : txResult.signature;
+      await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+      return signature;
+    } catch (err) {
+      if (!wallet.signTransaction) {
+        throw err;
+      }
+    }
   }
 
   if (!wallet.signTransaction) {
