@@ -39,16 +39,26 @@ export const BlockchainUI = () => {
   const uploadMutation = useMutation({
     mutationFn: async ({ file, wallet }: { file: File; wallet: string }) => {
       const uploadResult = await api.uploadFile(file, wallet);
-      const memoMessage =
-        uploadResult.memo_message ||
-        `book_hash:${uploadResult.file_record.file_hash};ipfs_cid:${uploadResult.file_record.file_cid}`;
+      const memoMessage = uploadResult.memo || `v1|c=${uploadResult.ipfs_cid}|h=${uploadResult.file_hash}`;
 
       if (!connectedProvider) {
         throw new Error('Wallet provider is disconnected');
       }
 
       const signature = await sendMemoTransaction(connectedProvider, memoMessage);
-      await api.confirmUploadSignature(uploadResult.file_record.file_hash, signature, wallet);
+      await api.registerRecord({
+        wallet_address: wallet,
+        metadata: {
+          title: uploadResult.metadata.title || '',
+          difficulty: uploadResult.metadata.difficulty || '',
+          genre: uploadResult.metadata.genre || '',
+          summary: uploadResult.metadata.summary || '',
+          keywords: [],
+        },
+        ipfs_cid: uploadResult.ipfs_cid,
+        file_hash: uploadResult.file_hash,
+        memo_pointer: signature,
+      });
       return uploadResult;
     },
     onSuccess: () => {
