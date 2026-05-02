@@ -33,7 +33,7 @@ export default function Books() {
           <div key={book.id} className="flex items-center justify-between rounded border border-border/40 px-3 py-2">
             <div>
               <p className="font-medium">{book.title}</p>
-              <p className="text-xs text-muted-foreground">{book.genre} • {book.difficulty} • {book.access_type || 'open'}</p>
+              <p className="text-xs text-muted-foreground">{book.genre} • {book.difficulty}</p>
             </div>
             <Button size="sm" onClick={() => window.open(`https://ipfs.io/ipfs/${book.file_cid}`, '_blank', 'noopener,noreferrer')}>View</Button>
           </div>

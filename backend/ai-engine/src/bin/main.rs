@@ -130,7 +130,7 @@ async fn list_all() -> impl Responder {
     let res = web::block(move || -> Result<Vec<Vec<String>>, rusqlite::Error> {
         let conn = open_archive_db()?;
         let mut stmt = conn.prepare(
-            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive ORDER BY id DESC",
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive ORDER BY id DESC",
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -143,10 +143,8 @@ async fn list_all() -> impl Responder {
                 format!("{}|{}", row.get::<_, String>(5)?, row.get::<_, String>(6)?),
                 row.get(7)?,
                 row.get(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, i64>(10)?.to_string(),
-                row.get::<_, i64>(11)?.to_string(),
-                row.get::<_, String>(12)?,
+                row.get::<_, i64>(9)?.to_string(),
+                row.get::<_, String>(10)?,
             ])
         })?;
 
@@ -171,7 +169,7 @@ async fn list_by_wallet(query: web::Query<WalletMetadataQuery>) -> impl Responde
     let res = web::block(move || -> Result<Vec<Vec<String>>, rusqlite::Error> {
         let conn = open_archive_db()?;
         let mut stmt = conn.prepare(
-            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE COALESCE(uploader_wallet, '') = ?1 ORDER BY id DESC",
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, COALESCE(uploader_wallet, ''), COALESCE(solana_signature, ''), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE COALESCE(uploader_wallet, '') = ?1 ORDER BY id DESC",
         )?;
 
         let rows = stmt.query_map([wallet], |row| {
@@ -184,10 +182,8 @@ async fn list_by_wallet(query: web::Query<WalletMetadataQuery>) -> impl Responde
                 format!("{}|{}", row.get::<_, String>(5)?, row.get::<_, String>(6)?),
                 row.get(7)?,
                 row.get(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, i64>(10)?.to_string(),
-                row.get::<_, i64>(11)?.to_string(),
-                row.get::<_, String>(12)?,
+                row.get::<_, i64>(9)?.to_string(),
+                row.get::<_, String>(10)?,
             ])
         })?;
         Ok(rows.flatten().collect())
@@ -345,7 +341,7 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
 
     let pattern = format!("%{}%", q);
     let sql = format!(
-        "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE {} LIKE ?1 ORDER BY id DESC",
+        "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE {} LIKE ?1 ORDER BY id DESC",
         field
     );
 
@@ -363,8 +359,8 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
                 file_cid: row.get(6)?,
                 uploader_wallet: row.get(7).ok(),
                 solana_signature: row.get(8).ok(),
-                search_count: row.get(11).unwrap_or(0),
-                created_at: row.get(12).unwrap_or_default(),
+                search_count: row.get(9).unwrap_or(0),
+                created_at: row.get(10).unwrap_or_default(),
             })
         })?;
 
@@ -399,7 +395,7 @@ async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Res
     let res = web::block(move || -> Result<Option<ArchiveRecord>, rusqlite::Error> {
         let conn = open_archive_db()?;
         let mut stmt = conn.prepare(
-            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE file_hash = ?1 LIMIT 1",
+            "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive WHERE file_hash = ?1 LIMIT 1",
         )?;
 
         let mut rows = stmt.query([hash])?;
@@ -414,8 +410,8 @@ async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Res
                 file_cid: row.get(6)?,
                 uploader_wallet: row.get(7).ok(),
                 solana_signature: row.get(8).ok(),
-                search_count: row.get(11).unwrap_or(0),
-                created_at: row.get(12).unwrap_or_default(),
+                search_count: row.get(9).unwrap_or(0),
+                created_at: row.get(10).unwrap_or_default(),
             }));
         }
 
@@ -502,8 +498,8 @@ async fn library_highlights() -> impl Responder {
                     file_cid: row.get(6)?,
                     uploader_wallet: row.get(7).ok(),
                     solana_signature: row.get(8).ok(),
-                    search_count: row.get(11).unwrap_or(0),
-                    created_at: row.get(12).unwrap_or_default(),
+                    search_count: row.get(9).unwrap_or(0),
+                    created_at: row.get(10).unwrap_or_default(),
                 })
             })?;
             Ok(rows.flatten().collect())
@@ -539,7 +535,7 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
         })?;
 
         let field_name = field.name().to_string();
-        if field_name == "wallet_address"  {
+        if field_name == "wallet_address" {
             let mut bytes = Vec::new();
             while let Some(chunk_res) = field.next().await {
                 let chunk = chunk_res.map_err(|e| {
@@ -549,13 +545,7 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
             }
 
             let value = String::from_utf8_lossy(&bytes).trim().to_string();
-            if field_name == "wallet_address" {
-                wallet_address = Some(value);
-            } else if field_name == "access_type" {
-                access_type = if value.eq_ignore_ascii_case("restricted") { "restricted".to_string() } else { "open".to_string() };
-            } else if field_name == "publish_fee_lamports" {
-                publish_fee_lamports = value.parse::<i64>().unwrap_or(1000).max(0);
-            }
+            wallet_address = Some(value);
             continue;
         }
 
@@ -634,8 +624,8 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
             let _ = Connection::open(DB_NAME).and_then(|conn| {
                 let _ = ensure_archive_schema(&conn);
                 conn.execute(
-                    "UPDATE archive SET access_type = ?1, publish_fee_lamports = ?2, created_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE file_hash = ?3",
-                    params![access_type, publish_fee_lamports, file_record.file_hash.clone()],
+                    "UPDATE archive SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE file_hash = ?1",
+                    params![file_record.file_hash.clone()],
                 )
             });
 
@@ -654,9 +644,7 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
                 "ipfs_cid": file_record.file_cid,
                 "file_hash": file_record.file_hash,
                 "memo": memo_message,
-                "uploader_wallet": uploader_wallet,
-                "access_type": access_type,
-                "publish_fee_lamports": publish_fee_lamports
+                "uploader_wallet": uploader_wallet
             })))
         },
         Ok(Err(e)) => { log_backend_error("/api/upload db insert", &e); Ok(HttpResponse::InternalServerError().body(format!("Database insertion failed: {}", e))) },

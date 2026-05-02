@@ -27,8 +27,6 @@ export interface ArchiveRecord {
   file_cid: string;
   uploader_wallet?: string;
   solana_signature?: string;
-  access_type?: string;
-  publish_fee_lamports?: number;
   search_count?: number;
   created_at?: string;
 }
@@ -41,8 +39,6 @@ export interface UploadResponse {
   memo?: string;
   solana_signature?: string;
   uploader_wallet?: string;
-  access_type?: string;
-  publish_fee_lamports?: number;
 }
 
 export interface IntegrityCheckResult {
@@ -97,10 +93,8 @@ const normalizeMetadataRows = (rows: string[][]): ArchiveRecord[] =>
       file_cid: fileCid,
       uploader_wallet: row[6] || undefined,
       solana_signature: row[7] || undefined,
-      access_type: row[8] || 'open',
-      publish_fee_lamports: Number(row[9] || 1000),
-      search_count: Number(row[10] || 0),
-      created_at: row[11] || undefined,
+      search_count: Number(row[9] || 0),
+      created_at: row[10] || undefined,
     };
   });
 

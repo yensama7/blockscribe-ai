@@ -154,7 +154,7 @@ export const BlockchainUI = () => {
             <div key={record.id} className="flex items-center justify-between rounded border border-border/40 px-3 py-2">
               <div>
                 <p className="font-medium">{record.title}</p>
-                <p className="text-xs text-muted-foreground">{record.uploader_wallet || 'unknown uploader'} • {record.access_type || 'open'}</p>
+                <p className="text-xs text-muted-foreground">{record.uploader_wallet || 'unknown uploader'}</p>
               </div>
               <Button size="sm" onClick={() => handleDownload(record)}>
                 <Download className="mr-1 h-4 w-4" /> Get <ExternalLink className="ml-1 h-4 w-4" />
