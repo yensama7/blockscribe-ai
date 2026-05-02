@@ -131,7 +131,10 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error(`Upload failed (${response.status}): ${response.statusText}`);
+      const errorBody = await response.text();
+      throw new Error(
+        `Upload failed (${response.status}): ${errorBody || response.statusText}`,
+      );
     }
 
     return response.json();
