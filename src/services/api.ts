@@ -27,8 +27,6 @@ export interface ArchiveRecord {
   file_cid: string;
   uploader_wallet?: string;
   solana_signature?: string;
-  access_type?: string;
-  publish_fee_lamports?: number;
   search_count?: number;
   created_at?: string;
 }
@@ -36,12 +34,11 @@ export interface ArchiveRecord {
 export interface UploadResponse {
   status: string;
   metadata: { title?: string; difficulty?: string; genre?: string; summary?: string };
-  file_record: { file_hash: string; file_cid: string };
-  memo_message?: string;
+  ipfs_cid: string;
+  file_hash: string;
+  memo?: string;
   solana_signature?: string;
   uploader_wallet?: string;
-  access_type?: string;
-  publish_fee_lamports?: number;
 }
 
 export interface IntegrityCheckResult {
@@ -96,10 +93,8 @@ const normalizeMetadataRows = (rows: string[][]): ArchiveRecord[] =>
       file_cid: fileCid,
       uploader_wallet: row[6] || undefined,
       solana_signature: row[7] || undefined,
-      access_type: row[8] || 'open',
-      publish_fee_lamports: Number(row[9] || 1000),
-      search_count: Number(row[10] || 0),
-      created_at: row[11] || undefined,
+      search_count: Number(row[9] || 0),
+      created_at: row[10] || undefined,
     };
   });
 
@@ -124,13 +119,16 @@ export const api = {
     formData.append('wallet_address', walletAddress);
     formData.append('file', file);
 
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/upload`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/upload`, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Upload failed (${response.status}): ${response.statusText}`);
+      const errorBody = await response.text();
+      throw new Error(
+        `Upload failed (${response.status}): ${errorBody || response.statusText}`,
+      );
     }
 
     return response.json();
@@ -149,6 +147,19 @@ export const api = {
         solana_signature: solanaSignature,
         uploader_wallet: uploaderWallet,
       }),
+    }),
+
+  registerRecord: async (payload: {
+    wallet_address: string;
+    metadata: { title: string; difficulty: string; genre: string; summary: string; keywords?: string[] };
+    ipfs_cid: string;
+    file_hash: string;
+    memo_pointer: string;
+  }): Promise<{ status: string }> =>
+    fetchJson<{ status: string }>('/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     }),
 
   verifyFileHash: async (hash: string): Promise<IntegrityCheckResult> =>
