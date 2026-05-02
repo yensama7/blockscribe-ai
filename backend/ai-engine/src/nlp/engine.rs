@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Context};
 use dotenv::dotenv;
 use pdf_extract::extract_text_from_mem;
-use regex::Regex;
 use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -26,6 +25,23 @@ fn fallback_metadata_from_path(file_path: &str) -> ExtractedMetaData {
     }
 }
 
+fn sanitize_metadata(mut metadata: ExtractedMetaData, file_path: &str) -> ExtractedMetaData {
+    let fallback = fallback_metadata_from_path(file_path);
+    if metadata.title.trim().is_empty() {
+        metadata.title = fallback.title;
+    }
+    if metadata.genre.trim().is_empty() {
+        metadata.genre = "General".to_string();
+    }
+    if metadata.difficulty.trim().is_empty() {
+        metadata.difficulty = "Unknown".to_string();
+    }
+    if metadata.summary.trim().is_empty() {
+        metadata.summary = "No summary generated.".to_string();
+    }
+    metadata
+}
+
 pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<ExtractedMetaData> {
     let bytes = fs::read(&file_path)
         .await
@@ -48,18 +64,19 @@ pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<Extract
         "messages": [
             {
                 "role": "system",
-                "content": "You are an assistant that extracts structured metadata from documents. Return markdown fields for Genre, Title, Difficulty Level, and Summary."
+                "content": "You extract structured metadata from book-like documents. Always return ONLY valid compact JSON."
             },
             {
                 "role": "user",
                 "content": format!(
-                    "From the following text, extract:\n- Genre\n- Summary\n- Difficulty level (Beginner/Intermediate/Advanced)\n- Title\n\nText:\n{}",
+                    "From the following text, extract metadata and return STRICT JSON with keys: title, genre, difficulty, summary.\nRules:\n- title: concise, human-readable title\n- genre: specific genre (not 'General' unless absolutely unavoidable)\n- difficulty: one of Beginner|Intermediate|Advanced\n- summary: max 60 words\nText:\n{}",
                     extracted_txt
                 )
             }
         ],
+        "response_format": {"type": "json_object"},
         "include_reasoning": false,
-        "temperature": 0.3
+        "temperature": 0.1
     });
 
     let response = Client::new()
@@ -71,36 +88,40 @@ pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<Extract
 
     let response_text = match response {
         Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
-        _ => return Ok(fallback_metadata_from_path(&file_path)),
+        Ok(resp) => {
+            eprintln!("[nlp] ai response non-success status: {}", resp.status());
+            return Ok(fallback_metadata_from_path(&file_path));
+        }
+        Err(err) => {
+            eprintln!("[nlp] ai request failed: {}", err);
+            return Ok(fallback_metadata_from_path(&file_path));
+        }
     };
 
-    let re = Regex::new(
-        r"(?s)\*\*Genre:\*\*\s*(.*?)\s+.*?\*\*Title:\*\*\s*(.*?)\s+.*?\*\*Difficulty\s*Level:\*\*\s*(.*?)\s+.*?\*\*Summary.*?:\*\*\s*(.*?)$",
-    )
-    .map_err(|e| anyhow!("regex initialization error: {e}"))?;
+    let outer: Value = serde_json::from_str(&response_text)
+        .map_err(|e| anyhow!("invalid ai response JSON: {e}"))?;
+    let content = outer
+        .get("choices")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("message"))
+        .and_then(|v| v.get("content"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
 
-    if let Some(caps) = re.captures(&response_text) {
-        return Ok(ExtractedMetaData {
-            genre: caps
-                .get(1)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "General".to_string()),
-            title: caps
-                .get(2)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "Untitled document".to_string()),
-            difficulty: caps
-                .get(3)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            summary: caps
-                .get(4)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "No summary generated.".to_string()),
-        });
+    if content.is_empty() {
+        eprintln!("[nlp] ai content empty; using fallback metadata");
+        return Ok(fallback_metadata_from_path(&file_path));
     }
 
-    Ok(fallback_metadata_from_path(&file_path))
+    let parsed: Result<ExtractedMetaData, _> = serde_json::from_str(content);
+    match parsed {
+        Ok(metadata) => Ok(sanitize_metadata(metadata, &file_path)),
+        Err(err) => {
+            eprintln!("[nlp] failed to parse ai content as JSON: {}", err);
+            Ok(fallback_metadata_from_path(&file_path))
+        }
+    }
 }
 
 pub async fn package_hash_and_cid<P: AsRef<Path>>(path: P) -> anyhow::Result<FileRecord> {

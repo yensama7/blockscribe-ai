@@ -29,6 +29,33 @@ fn open_archive_db() -> Result<Connection, rusqlite::Error> {
     Ok(conn)
 }
 
+fn normalize_metadata(mut metadata: ExtractedMetaData, original_filename: Option<&str>) -> ExtractedMetaData {
+    let fallback_title = original_filename
+        .and_then(|name| Path::new(name).file_stem().and_then(|s| s.to_str()))
+        .unwrap_or("Untitled Document")
+        .replace('_', " ")
+        .replace('-', " ");
+
+    let title = metadata.title.trim();
+    if title.is_empty() || title.eq_ignore_ascii_case("untitled") || title.eq_ignore_ascii_case("untitled document") {
+        metadata.title = fallback_title.clone();
+    }
+
+    if metadata.genre.trim().is_empty() || metadata.genre.eq_ignore_ascii_case("general") || metadata.genre.eq_ignore_ascii_case("unknown") {
+        metadata.genre = "Non-fiction".to_string();
+    }
+
+    if metadata.difficulty.trim().is_empty() || metadata.difficulty.eq_ignore_ascii_case("unknown") {
+        metadata.difficulty = "Intermediate".to_string();
+    }
+
+    if metadata.summary.trim().is_empty() || metadata.summary.to_lowercase().contains("fallback metadata extraction") {
+        metadata.summary = "Summary unavailable from AI extraction; basic metadata applied.".to_string();
+    }
+
+    metadata
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ArchiveRecord {
     id: i64,
@@ -594,15 +621,22 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
         return Ok(HttpResponse::BadRequest().body("No file uploaded"));
     };
 
-    let metadata: ExtractedMetaData = match get_meta_data_response(filepath.clone()).await {
+    eprintln!("[upload] starting metadata extraction for file: {}", filepath);
+    let metadata_raw: ExtractedMetaData = match get_meta_data_response(filepath.clone()).await {
         Ok(m) => m,
         Err(e) => return Ok(HttpResponse::InternalServerError().body(format!("Metadata extraction failed: {}", e))),
     };
+    let metadata = normalize_metadata(metadata_raw, original_filename_opt.as_deref());
+    eprintln!(
+        "[upload] metadata extracted => title='{}', genre='{}', difficulty='{}'",
+        metadata.title, metadata.genre, metadata.difficulty
+    );
 
     let file_record: FileRecord = match package_hash_and_cid(filepath.clone()).await {
         Ok(r) => r,
         Err(e) => return Ok(HttpResponse::InternalServerError().body(format!("File packaging failed: {}", e))),
     };
+    eprintln!("[upload] file packaged => hash={}, cid={}", file_record.file_hash, file_record.file_cid);
 
     let metadata_clone = metadata.clone();
     let file_record_clone2 = file_record.clone();
@@ -621,6 +655,7 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
 
     match db_res {
         Ok(Ok(_)) => {
+            eprintln!("[upload] archive upsert successful for hash={}", file_record.file_hash);
             let _ = Connection::open(DB_NAME).and_then(|conn| {
                 let _ = ensure_archive_schema(&conn);
                 conn.execute(
@@ -706,6 +741,10 @@ async fn register(payload: web::Json<RegisterRequest>) -> impl Responder {
     }
 
     let req = payload.into_inner();
+    eprintln!(
+        "[register] request => wallet={}, hash={}, cid={}, memo_pointer={}",
+        req.wallet_address, req.file_hash, req.ipfs_cid, req.memo_pointer
+    );
     let res = web::block(move || -> Result<usize, rusqlite::Error> {
         let conn = open_archive_db()?;
         conn.execute(
@@ -734,7 +773,10 @@ async fn register(payload: web::Json<RegisterRequest>) -> impl Responder {
     .await;
 
     match res {
-        Ok(Ok(_)) => HttpResponse::Ok().json(serde_json::json!({"status":"ok"})),
+        Ok(Ok(_)) => {
+            eprintln!("[register] upsert successful");
+            HttpResponse::Ok().json(serde_json::json!({"status":"ok"}))
+        }
         Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("DB error: {}", e)),
         Err(e) => HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)),
     }
