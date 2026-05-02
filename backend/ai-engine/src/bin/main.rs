@@ -40,8 +40,6 @@ pub struct ArchiveRecord {
     file_cid: String,
     uploader_wallet: Option<String>,
     solana_signature: Option<String>,
-    access_type: String,
-    publish_fee_lamports: i64,
     search_count: i64,
     created_at: String,
 }
