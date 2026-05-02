@@ -1,0 +1,15 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Copy requirements first
+COPY backend/ai-engine/src/vectored/requirements.txt .
+
+# Install dependencies (cached)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir -r requirements.txt
+
+# Copy code
+COPY backend/ai-engine/src/vectored .
+
+CMD ["python", "vector_service.py"]
