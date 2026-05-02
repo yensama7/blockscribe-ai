@@ -8,7 +8,6 @@ services:
     volumes:
       - ipfs_data:/data/ipfs
 
-
   frontend:
     build:
       context: .
@@ -39,7 +38,6 @@ services:
       - ./backend:/app/backend
     depends_on:
       - ipfs
-      - solana
       - python-engine
 
 volumes:
