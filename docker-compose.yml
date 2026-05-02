@@ -22,7 +22,7 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./frontend:/app   # live editing
+      - ./:/app   # live editing
     depends_on:
       - rust-backend
 
