@@ -27,6 +27,8 @@ services:
     container_name: blockscribe_rust
     ports:
       - "5000:5000"
+    environment:
+      - IPFS_API_URL=http://ipfs:5001
     volumes:
       - ./backend:/app/backend
     depends_on:
