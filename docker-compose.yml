@@ -8,13 +8,6 @@ services:
     volumes:
       - ipfs_data:/data/ipfs
 
-  solana:
-    image: solanalabs/solana:stable
-    command: solana-test-validator --rpc-bind-address 0.0.0.0
-    ports:
-      - "8899:8899"
-      - "8900:8900"
-
   frontend:
     build:
       context: .
@@ -22,17 +15,10 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./frontend:/app   # live editing
+      - ./:/app   # live editing
+      - /app/node_modules
     depends_on:
       - rust-backend
-
-  python-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile.python
-    container_name: blockscribe_python
-    ports:
-      - "8001:8001"
 
   rust-backend:
     build:
@@ -41,12 +27,12 @@ services:
     container_name: blockscribe_rust
     ports:
       - "5000:5000"
+    environment:
+      - IPFS_API_URL=http://ipfs:5001
     volumes:
       - ./backend:/app/backend
     depends_on:
       - ipfs
-      - solana
-      - python-engine
 
 volumes:
   ipfs_data:
