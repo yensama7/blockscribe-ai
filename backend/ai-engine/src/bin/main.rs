@@ -506,8 +506,6 @@ async fn library_highlights() -> impl Responder {
                     file_cid: row.get(6)?,
                     uploader_wallet: row.get(7).ok(),
                     solana_signature: row.get(8).ok(),
-                    access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
-                    publish_fee_lamports: row.get(10).unwrap_or(1000),
                     search_count: row.get(11).unwrap_or(0),
                     created_at: row.get(12).unwrap_or_default(),
                 })
