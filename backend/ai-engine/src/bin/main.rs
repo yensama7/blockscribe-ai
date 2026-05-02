@@ -363,8 +363,6 @@ async fn search_by_field(query: web::Query<HashMap<String, String>>) -> impl Res
                 file_cid: row.get(6)?,
                 uploader_wallet: row.get(7).ok(),
                 solana_signature: row.get(8).ok(),
-                access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
-                publish_fee_lamports: row.get(10).unwrap_or(1000),
                 search_count: row.get(11).unwrap_or(0),
                 created_at: row.get(12).unwrap_or_default(),
             })
@@ -416,8 +414,6 @@ async fn integrity_check(query: web::Query<HashMap<String, String>>) -> impl Res
                 file_cid: row.get(6)?,
                 uploader_wallet: row.get(7).ok(),
                 solana_signature: row.get(8).ok(),
-                access_type: row.get(9).unwrap_or_else(|_| "open".to_string()),
-                publish_fee_lamports: row.get(10).unwrap_or(1000),
                 search_count: row.get(11).unwrap_or(0),
                 created_at: row.get(12).unwrap_or_default(),
             }));
@@ -513,7 +509,7 @@ async fn library_highlights() -> impl Responder {
             Ok(rows.flatten().collect())
         };
 
-        let base = "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(access_type, 'open'), COALESCE(publish_fee_lamports, 1000), COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive";
+        let base = "SELECT id, genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, COALESCE(search_count, 0), COALESCE(created_at, '') FROM archive";
 
         let top_searched = fetch_records(&format!("{} ORDER BY search_count DESC, id DESC LIMIT 15", base))?;
         let recent = fetch_records(&format!("{} ORDER BY id DESC LIMIT 10", base))?;
@@ -534,8 +530,6 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
     let _ = std::fs::create_dir_all("./uploads");
 
     let mut wallet_address: Option<String> = None;
-    let mut access_type: String = "open".to_string();
-    let mut publish_fee_lamports: i64 = 1000;
     let mut uploaded_file_path: Option<String> = None;
     let mut original_filename_opt: Option<String> = None;
 
@@ -545,7 +539,7 @@ async fn upload_inner(mut payload: Multipart) -> Result<HttpResponse, Error> {
         })?;
 
         let field_name = field.name().to_string();
-        if field_name == "wallet_address" || field_name == "access_type" || field_name == "publish_fee_lamports" {
+        if field_name == "wallet_address"  {
             let mut bytes = Vec::new();
             while let Some(chunk_res) = field.next().await {
                 let chunk = chunk_res.map_err(|e| {
