@@ -90,6 +90,15 @@ struct UploadSignatureRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct RegisterRequest {
+    wallet_address: String,
+    metadata: ExtractedMetaData,
+    ipfs_cid: String,
+    file_hash: String,
+    memo_pointer: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct WalletMetadataQuery {
     wallet: String,
 }
@@ -597,6 +606,7 @@ async fn search(payload: web::Json<VectorSearchRequest>) -> impl Responder {
 }
 
 #[post("/api/upload")]
+#[post("/upload")]
 async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     let _ = std::fs::create_dir_all("./uploads");
 
@@ -712,18 +722,21 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
                 )
             });
 
+            let compact_title = metadata.title.trim().chars().take(48).collect::<String>();
             let memo_message = format!(
-                "book_hash:{};ipfs_cid:{}",
-                file_record.file_hash.clone(),
-                file_record.file_cid.clone()
+                "v1|t={}|c={}|h={}",
+                compact_title.replace('|', " ").replace(';', " "),
+                file_record.file_cid.clone(),
+                file_record.file_hash.clone()
             );
 
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "status": "success",
                 "original_filename": original_filename_opt,
                 "metadata": metadata,
-                "file_record": file_record,
-                "memo_message": memo_message,
+                "ipfs_cid": file_record.file_cid,
+                "file_hash": file_record.file_hash,
+                "memo": memo_message,
                 "uploader_wallet": uploader_wallet,
                 "access_type": access_type,
                 "publish_fee_lamports": publish_fee_lamports
@@ -764,6 +777,51 @@ async fn confirm_upload_signature(payload: web::Json<UploadSignatureRequest>) ->
             log_backend_error("/api/upload/confirm-signature blocking", &e.to_string());
             HttpResponse::InternalServerError().body(format!("Blocking error: {}", e))
         }
+    }
+}
+
+#[post("/register")]
+async fn register(payload: web::Json<RegisterRequest>) -> impl Responder {
+    if payload.wallet_address.trim().is_empty()
+        || payload.file_hash.trim().is_empty()
+        || payload.ipfs_cid.trim().is_empty()
+        || payload.memo_pointer.trim().is_empty()
+    {
+        return HttpResponse::BadRequest().body("wallet_address, file_hash, ipfs_cid, and memo_pointer are required");
+    }
+
+    let req = payload.into_inner();
+    let res = web::block(move || -> Result<usize, rusqlite::Error> {
+        let conn = open_archive_db()?;
+        conn.execute(
+            "INSERT INTO archive (genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, created_at, search_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP, 0)
+             ON CONFLICT(file_hash) DO UPDATE SET
+               genre=excluded.genre,
+               title=excluded.title,
+               difficulty=excluded.difficulty,
+               summary=excluded.summary,
+               file_cid=excluded.file_cid,
+               uploader_wallet=excluded.uploader_wallet,
+               solana_signature=excluded.solana_signature",
+            params![
+                req.metadata.genre,
+                req.metadata.title,
+                req.metadata.difficulty,
+                req.metadata.summary,
+                req.file_hash,
+                req.ipfs_cid,
+                req.wallet_address,
+                req.memo_pointer
+            ],
+        )
+    })
+    .await;
+
+    match res {
+        Ok(Ok(_)) => HttpResponse::Ok().json(serde_json::json!({"status":"ok"})),
+        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("DB error: {}", e)),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)),
     }
 }
 
@@ -814,6 +872,7 @@ async fn main() -> std::io::Result<()> {
             .service(clusters)
             .service(upload)
             .service(confirm_upload_signature)
+            .service(register)
             .route("/health", web::get().to(|| async { HttpResponse::Ok().body("OK") }))
     })
     .bind(("0.0.0.0", 5000))?
