@@ -1,34 +1,13 @@
-# syntax=docker/dockerfile:1.7
-FROM rust:1.86-slim AS builder
+FROM rust:latest
 
 WORKDIR /app
 
-# Build dependencies required by common Rust native crates.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-
-# Copy manifests first so dependency compilation can be cached.
+# Cache dependencies
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src/bin && printf 'fn main() {}\n' > src/bin/main.rs
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --bin server
+RUN mkdir -p src/bin && echo "fn main() {}" > src/bin/main.rs
+RUN cargo build
 
-# Build real source; only app crates recompile when sources change.
-COPY src ./src
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --bin server
+# Copy actual code
+COPY . .
 
-FROM debian:bookworm-slim AS runtime
-WORKDIR /app
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/target/release/server /usr/local/bin/server
-
-EXPOSE 5000
-CMD ["server"]
+CMD ["cargo", "run"]
