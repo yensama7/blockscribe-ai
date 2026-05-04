@@ -25,8 +25,6 @@ pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
             file_cid TEXT NOT NULL,
             uploader_wallet TEXT,
             solana_signature TEXT,
-            access_type TEXT NOT NULL DEFAULT 'open',
-            publish_fee_lamports INTEGER NOT NULL DEFAULT 1000,
             search_count INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
@@ -44,12 +42,6 @@ pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
     if !archive_has_column(conn, "solana_signature")? {
         conn.execute("ALTER TABLE archive ADD COLUMN solana_signature TEXT", ())?;
     }
-    if !archive_has_column(conn, "access_type")? {
-        conn.execute("ALTER TABLE archive ADD COLUMN access_type TEXT", ())?;
-    }
-    if !archive_has_column(conn, "publish_fee_lamports")? {
-        conn.execute("ALTER TABLE archive ADD COLUMN publish_fee_lamports INTEGER", ())?;
-    }
     if !archive_has_column(conn, "search_count")? {
         conn.execute("ALTER TABLE archive ADD COLUMN search_count INTEGER", ())?;
     }
@@ -59,9 +51,7 @@ pub fn ensure_archive_schema(conn: &Connection) -> Result<()> {
 
     conn.execute(
         "UPDATE archive
-         SET access_type = COALESCE(access_type, 'open'),
-             publish_fee_lamports = COALESCE(publish_fee_lamports, 1000),
-             search_count = COALESCE(search_count, 0),
+         SET search_count = COALESCE(search_count, 0),
              created_at = COALESCE(created_at, CURRENT_TIMESTAMP)",
         (),
     )?;
