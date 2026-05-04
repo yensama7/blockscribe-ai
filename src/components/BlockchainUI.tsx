@@ -43,10 +43,10 @@ export const BlockchainUI = () => {
       await api.registerRecord({
         wallet_address: wallet,
         metadata: {
-          title: uploadResult.metadata.title || '',
-          difficulty: uploadResult.metadata.difficulty || '',
-          genre: uploadResult.metadata.genre || '',
-          summary: uploadResult.metadata.summary || '',
+          title: uploadResult.metadata.title ?? 'Untitled Document',
+          difficulty: uploadResult.metadata.difficulty ?? 'Intermediate',
+          genre: uploadResult.metadata.genre ?? 'Non-fiction',
+          summary: uploadResult.metadata.summary ?? 'Summary unavailable.',
           keywords: [],
         },
         ipfs_cid: uploadResult.ipfs_cid,

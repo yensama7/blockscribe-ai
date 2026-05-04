@@ -751,13 +751,14 @@ async fn register(payload: web::Json<RegisterRequest>) -> impl Responder {
             "INSERT INTO archive (genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, created_at, search_count)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP, 0)
              ON CONFLICT(file_hash) DO UPDATE SET
-               genre=excluded.genre,
-               title=excluded.title,
-               difficulty=excluded.difficulty,
-               summary=excluded.summary,
-               file_cid=excluded.file_cid,
-               uploader_wallet=excluded.uploader_wallet,
-               solana_signature=excluded.solana_signature",
+               genre=COALESCE(NULLIF(excluded.genre, ''), archive.genre),
+               title=COALESCE(NULLIF(excluded.title, ''), archive.title),
+               difficulty=COALESCE(NULLIF(excluded.difficulty, ''), archive.difficulty),
+               summary=COALESCE(NULLIF(excluded.summary, ''), archive.summary),
+               file_cid=COALESCE(NULLIF(excluded.file_cid, ''), archive.file_cid),
+               uploader_wallet=COALESCE(NULLIF(excluded.uploader_wallet, ''), archive.uploader_wallet),
+               solana_signature=COALESCE(NULLIF(excluded.solana_signature, ''), archive.solana_signature),
+               created_at=COALESCE(archive.created_at, CURRENT_TIMESTAMP)",
             params![
                 req.metadata.genre,
                 req.metadata.title,
