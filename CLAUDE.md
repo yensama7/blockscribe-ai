@@ -19,7 +19,7 @@ cd backend && ./run_server.sh
 
 **Rust backend only**
 ```bash
-cargo run --manifest-path backend/ai-engine/cargo.toml
+cargo run --manifest-path backend/ai-engine/Cargo.toml
 ```
 
 **Python vector service only**
@@ -29,8 +29,6 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r src/vectored/requirements.txt
 python src/vectored/vector_service.py
 ```
-
-> The Cargo manifest is intentionally named `cargo.toml` (lowercase), not the conventional `Cargo.toml`. Always use `--manifest-path backend/ai-engine/cargo.toml`.
 
 ## Architecture
 

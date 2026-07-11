@@ -98,7 +98,7 @@ python src/vectored/vector_service.py
 
 ```bash
 # 2) rust api
-cargo run --manifest-path backend/ai-engine/cargo.toml
+cargo run --manifest-path backend/ai-engine/Cargo.toml
 ```
 
 ```bash
@@ -110,7 +110,6 @@ npm run dev -- --host 0.0.0.0 --port 8081
 ## Notes / current implementation caveats
 
 - Rust currently binds to `127.0.0.1:5000`.
-- Cargo manifest file is named `cargo.toml` (lowercase) in this repo, so commands use `--manifest-path backend/ai-engine/cargo.toml`.
 - Configure runtime env vars:
   - Solana RPC: `SOLANA_RPC_URL` (default: `https://api.devnet.solana.com`)
   - Solana signer keypair: `SOLANA_KEYPAIR_PATH` (default: `~/.config/solana/id.json`)
