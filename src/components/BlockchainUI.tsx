@@ -48,23 +48,7 @@ export const BlockchainUI = () => {
       }
 
       const signature = await sendMemoTransaction(connectedProvider, memoMessage);
-<<<<<<< HEAD
-      await api.registerRecord({
-        wallet_address: wallet,
-        metadata: {
-          title: uploadResult.metadata.title ?? 'Untitled Document',
-          difficulty: uploadResult.metadata.difficulty ?? 'Intermediate',
-          genre: uploadResult.metadata.genre ?? 'Non-fiction',
-          summary: uploadResult.metadata.summary ?? 'Summary unavailable.',
-          keywords: [],
-        },
-        ipfs_cid: uploadResult.ipfs_cid,
-        file_hash: uploadResult.file_hash,
-        memo_pointer: signature,
-      });
-=======
       await api.confirmUploadSignature(uploadResult.file_record.file_hash, signature, wallet);
->>>>>>> parent of a1ae377 (Harden AI metadata extraction to strict JSON and deterministic settings)
       return uploadResult;
     },
     onSuccess: () => {

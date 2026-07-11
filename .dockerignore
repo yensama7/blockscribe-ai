@@ -1,5 +1,8 @@
 node_modules
-backend/ai-engine/target
 .git
+*.db
+target
 venv
 __pycache__
+backend/ai-engine/target
+backend/ai-engine/uploads

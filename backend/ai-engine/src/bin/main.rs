@@ -19,14 +19,20 @@ use ai_engine::{
     FileRecord,
 };
 
-const DB_NAME: &str = "archive.db";
-
 fn log_backend_error(context: &str, error: &str) {
     eprintln!("[backend-error] {}: {}", context, error);
 }
 
+fn db_path() -> String {
+    env::var("DB_PATH").unwrap_or_else(|_| "archive.db".to_string())
+}
+
+fn python_engine_base() -> String {
+    env::var("PYTHON_ENGINE_URL").unwrap_or_else(|_| "http://127.0.0.1:8001".to_string())
+}
+
 fn open_archive_db() -> Result<Connection, rusqlite::Error> {
-    let conn = Connection::open(DB_NAME)?;
+    let conn = Connection::open(db_path())?;
     ensure_archive_schema(&conn)?;
     Ok(conn)
 }
@@ -543,7 +549,7 @@ async fn library_highlights() -> impl Responder {
 #[get("/analytics/difficulty")]
 async fn difficulty() -> impl Responder {
     let client = Client::new();
-    match client.get("http://0.0.0.0:8001/analytics/difficulty").send().await {
+    match client.get(format!("{}/analytics/difficulty", python_engine_base())).send().await {
         Ok(resp) => match resp.json::<Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
             Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
@@ -555,7 +561,7 @@ async fn difficulty() -> impl Responder {
 #[get("/analytics/genre")]
 async fn genre() -> impl Responder {
     let client = Client::new();
-    match client.get("http://0.0.0.0:8001/analytics/genre").send().await {
+    match client.get(format!("{}/analytics/genre", python_engine_base())).send().await {
         Ok(resp) => match resp.json::<Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
             Err(_) => HttpResponse::InternalServerError().body("Invalid JSON from vector service"),
@@ -568,7 +574,7 @@ async fn genre() -> impl Responder {
 async fn clusters(query: web::Query<HashMap<String, String>>) -> impl Responder {
     let client = Client::new();
     let n = query.get("n").cloned().unwrap_or_else(|| "3".to_string());
-    let url = format!("http://0.0.0.0:8001/analytics/clusters?n={}", n);
+    let url = format!("{}/analytics/clusters?n={}", python_engine_base(), n);
 
     match client.get(&url).send().await {
         Ok(resp) => match resp.json::<Value>().await {
@@ -587,7 +593,7 @@ async fn search(payload: web::Json<VectorSearchRequest>) -> impl Responder {
         "k": payload.k.unwrap_or(3),
     });
 
-    match client.post("http://0.0.0.0:8001/search").json(&body).send().await {
+    match client.post(format!("{}/search", python_engine_base())).json(&body).send().await {
         Ok(resp) => match resp.json::<VectorSearchResult>().await {
             Ok(json) => HttpResponse::Ok().json(json),
             Err(_) => HttpResponse::InternalServerError().body("Invalid response from vector service"),
@@ -690,13 +696,15 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
     let metadata_clone = metadata.clone();
     let file_record_clone2 = file_record.clone();
     let wallet_clone = uploader_wallet.clone();
+    let path_for_insert = db_path();
+    let path_for_update = db_path();
     let db_res = tokio::task::spawn_blocking(move || {
         add_to_or_create_database(
             &metadata_clone,
             &file_record_clone2,
             &wallet_clone,
             "",
-            DB_NAME.to_string(),
+            path_for_insert,
         )
         .map_err(|e| e.to_string())
     })
@@ -704,7 +712,7 @@ async fn upload(mut payload: Multipart) -> Result<impl Responder, Error> {
 
     match db_res {
         Ok(Ok(_)) => {
-            let _ = Connection::open(DB_NAME).and_then(|conn| {
+            let _ = Connection::open(path_for_update).and_then(|conn| {
                 let _ = ensure_archive_schema(&conn);
                 conn.execute(
                     "UPDATE archive SET access_type = ?1, publish_fee_lamports = ?2, created_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE file_hash = ?3",
@@ -767,68 +775,13 @@ async fn confirm_upload_signature(payload: web::Json<UploadSignatureRequest>) ->
     }
 }
 
-<<<<<<< HEAD
-#[post("/register")]
-async fn register(payload: web::Json<RegisterRequest>) -> impl Responder {
-    if payload.wallet_address.trim().is_empty()
-        || payload.file_hash.trim().is_empty()
-        || payload.ipfs_cid.trim().is_empty()
-        || payload.memo_pointer.trim().is_empty()
-    {
-        return HttpResponse::BadRequest().body("wallet_address, file_hash, ipfs_cid, and memo_pointer are required");
-    }
 
-    let req = payload.into_inner();
-    eprintln!(
-        "[register] request => wallet={}, hash={}, cid={}, memo_pointer={}",
-        req.wallet_address, req.file_hash, req.ipfs_cid, req.memo_pointer
-    );
-    let res = web::block(move || -> Result<usize, rusqlite::Error> {
-        let conn = open_archive_db()?;
-        conn.execute(
-            "INSERT INTO archive (genre, title, difficulty, summary, file_hash, file_cid, uploader_wallet, solana_signature, created_at, search_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP, 0)
-             ON CONFLICT(file_hash) DO UPDATE SET
-               genre=COALESCE(NULLIF(excluded.genre, ''), archive.genre),
-               title=COALESCE(NULLIF(excluded.title, ''), archive.title),
-               difficulty=COALESCE(NULLIF(excluded.difficulty, ''), archive.difficulty),
-               summary=COALESCE(NULLIF(excluded.summary, ''), archive.summary),
-               file_cid=COALESCE(NULLIF(excluded.file_cid, ''), archive.file_cid),
-               uploader_wallet=COALESCE(NULLIF(excluded.uploader_wallet, ''), archive.uploader_wallet),
-               solana_signature=COALESCE(NULLIF(excluded.solana_signature, ''), archive.solana_signature),
-               created_at=COALESCE(archive.created_at, CURRENT_TIMESTAMP)",
-            params![
-                req.metadata.genre,
-                req.metadata.title,
-                req.metadata.difficulty,
-                req.metadata.summary,
-                req.file_hash,
-                req.ipfs_cid,
-                req.wallet_address,
-                req.memo_pointer
-            ],
-        )
-    })
-    .await;
-
-    match res {
-        Ok(Ok(_)) => {
-            eprintln!("[register] upsert successful");
-            HttpResponse::Ok().json(serde_json::json!({"status":"ok"}))
-        }
-        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("DB error: {}", e)),
-        Err(e) => HttpResponse::InternalServerError().body(format!("Blocking error: {}", e)),
-    }
-}
-
-=======
->>>>>>> parent of a1ae377 (Harden AI metadata extraction to strict JSON and deterministic settings)
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     if let Err(e) = open_archive_db() {
         log_backend_error("startup schema migration", &e.to_string());
     }
-    if let Ok(conn) = Connection::open(DB_NAME) {
+    if let Ok(conn) = Connection::open(db_path()) {
         if let Err(e) = ensure_chat_schema(&conn) {
             log_backend_error("startup chat schema migration", &e.to_string());
         }
@@ -840,7 +793,7 @@ async fn main() -> std::io::Result<()> {
                 origin
                     .to_str()
                     .map(|value| {
-                        value.starts_with("http://0.0.0.0:") || value.starts_with("http://localhost:")
+                        value.starts_with("http://0.0.0.0:") || value.starts_with("http://localhost:") || value.starts_with("http://127.0.0.1:")
                     })
                     .unwrap_or(false)
             })

@@ -1,10 +1,8 @@
-# file: vector_service.py
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
 import uvicorn
 
-# import your previous functions
-from utils import query_records, difficulty_distribution, genre_distribution, cluster_records
+from utils import query_records, difficulty_distribution, genre_distribution, cluster_records, fetch_records, ingest_data
 
 app = FastAPI()
 
@@ -12,6 +10,15 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 3
     filters: dict | None = None
+
+@app.on_event("startup")
+def startup_ingest():
+    try:
+        records = fetch_records()
+        if records:
+            ingest_data(records)
+    except Exception:
+        pass
 
 @app.post("/search")
 def search(req: QueryRequest):

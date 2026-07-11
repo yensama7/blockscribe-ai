@@ -1,0 +1,5 @@
+target
+uploads
+*.db
+src/vectored/__pycache__
+src/archive.db

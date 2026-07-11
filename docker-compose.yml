@@ -15,17 +15,6 @@ services:
       - "8899:8899"
       - "8900:8900"
 
-  frontend:
-    build:
-      context: .
-    container_name: blockscribe_frontend
-    ports:
-      - "8081:8081"
-    volumes:
-      - ./frontend:/app   # live editing
-    depends_on:
-      - rust-backend
-
   python-engine:
     build:
       context: .
@@ -33,6 +22,10 @@ services:
     container_name: blockscribe_python
     ports:
       - "8001:8001"
+    environment:
+      - DB_PATH=/app/data/archive.db
+    volumes:
+      - archive_db:/app/data
 
   rust-backend:
     build:
@@ -41,12 +34,27 @@ services:
     container_name: blockscribe_rust
     ports:
       - "5000:5000"
+    environment:
+      - DB_PATH=/app/data/archive.db
+      - PYTHON_ENGINE_URL=http://python-engine:8001
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-http://solana:8899}
+      - DEVELOPER_WALLET=${DEVELOPER_WALLET:-}
     volumes:
-      - ./backend:/app/backend
+      - archive_db:/app/data
     depends_on:
       - ipfs
       - solana
       - python-engine
 
+  frontend:
+    build:
+      context: .
+    container_name: blockscribe_frontend
+    ports:
+      - "8081:8081"
+    depends_on:
+      - rust-backend
+
 volumes:
   ipfs_data:
+  archive_db:

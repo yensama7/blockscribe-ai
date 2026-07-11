@@ -3,56 +3,25 @@ name = "ai-engine"
 version = "0.1.0"
 edition = "2024"
 
-# the server binary
 [[bin]]
 name = "server"
 path = "src/bin/main.rs"
 
-
 [dependencies]
-# General utilities
-anyhow = "1.0"        # simple error handling
-
-
-# Hashing
+anyhow = "1.0"
 sha2 = "0.10"
-
-# text extraction
 pdf-extract = "0.9.0"
-
-# open ai client
-async-openai = "0.23"
-tokio = {version = "1.47.1", features = ["full", "macros", "fs"]}
+tokio = { version = "1.47.1", features = ["full", "macros", "fs"] }
 dotenv = "0.15"
-
-
-
-reqwest = { version = "0.12.23", features = ["json", "multipart","rustls-tls"] }
+reqwest = { version = "0.12.23", features = ["json", "multipart", "rustls-tls"] }
 serde_json = "=1.0.145"
 serde = { version = "1.0.225", features = ["derive"] }
 regex = "1.11.2"
-
-ipfs-api = "0.17.0"                 # Rust client for the IPFS HTTP API (examples/docs available)
-ipfs-api-backend-hyper = "0.6"      # hyper backend for ipfs-api
 hex = "0.4"
-futures = "0.3"
-
-
-# database setup
 rusqlite = { version = "0.37.0", features = ["bundled"] }
-
-# solana blockchain integration
-solana-client = "3.0.3"
-solana-sdk = { version = "3.0.0", features = ["full"] }
-
-# server
 actix-web = "4"
 actix-multipart = "0.6"
 futures-util = "0.3"
 sanitize-filename = "0.5"
-uuid = {version = "1", features = ["v4", "std"]}
+uuid = { version = "1", features = ["v4", "std"] }
 actix-cors = "0.7.1"
-
-
-
-

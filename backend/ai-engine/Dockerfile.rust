@@ -1,13 +1,18 @@
-FROM rust:latest
-
+FROM rust:slim AS builder
 WORKDIR /app
 
-# Cache dependencies
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src/bin && echo "fn main() {}" > src/bin/main.rs
-RUN cargo build
+# Cache dependency compilation separately from source
+COPY cargo.toml Cargo.lock ./
+RUN mkdir -p src/bin && echo 'fn main(){}' > src/bin/main.rs
+RUN cargo build --release
 
-# Copy actual code
-COPY . .
+# Build real binary
+COPY src ./src
+RUN touch src/bin/main.rs && cargo build --release
 
-CMD ["cargo", "run"]
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /app/target/release/server .
+CMD ["./server"]
