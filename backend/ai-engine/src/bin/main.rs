@@ -15,7 +15,7 @@ use std::env;
 use uuid::Uuid;
 
 use ai_engine::{chain, db, ipfs, oai, vecsvc};
-use ai_engine::{extract_academic_metadata, extract_text, sha256_hex_of};
+use ai_engine::{extract_academic_metadata, extract_text, extract_text_from_bytes, sha256_hex_of};
 
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
@@ -461,12 +461,37 @@ async fn read_multipart(mut payload: Multipart) -> Result<UploadForm, HttpRespon
     if form.file_bytes.is_empty() {
         return Err(err_json(400, "no file uploaded"));
     }
+    if let Some(reason) = unsafe_upload_reason(&form.file_bytes) {
+        return Err(err_json(400, reason));
+    }
     Ok(form)
+}
+
+/// Reject dangerous uploads at the trust boundary (restructure.md §15): once a
+/// CID is published it is effectively permanent, so validate by content, not by
+/// extension, and refuse active content in PDFs.
+/// ponytail: signature/keyword scan, not a full malware engine — wire ClamAV
+/// here before accepting uploads from the open internet.
+fn unsafe_upload_reason(bytes: &[u8]) -> Option<&'static str> {
+    // Content sniffing: only allow PDF or plain-text-ish uploads.
+    let is_pdf = bytes.starts_with(b"%PDF");
+    let looks_binary = bytes.iter().take(1024).any(|&b| b == 0);
+    if !is_pdf && looks_binary {
+        return Some("unsupported file type — upload a PDF or a text document");
+    }
+    if is_pdf {
+        // Flag active content that has no place in an archived paper.
+        let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+        if has(b"/JavaScript") || has(b"/Launch") {
+            return Some("this PDF contains active content (JavaScript or launch actions) and cannot be archived — please upload a clean PDF");
+        }
+    }
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn ingest_pipeline(
-    state: &AppState,
+    state: web::Data<AppState>,
     user: &UserCtx,
     form: UploadForm,
     existing_submission: Option<Uuid>,
@@ -495,7 +520,50 @@ async fn ingest_pipeline(
         .map_err(|e| e500("save upload", e))?;
 
     let text = extract_text(&stored_path).await.unwrap_or_default();
-    let mut meta = extract_academic_metadata(&text, &form.filename).await;
+
+    // Pre-generate ids so the independent slow steps can run concurrently
+    // before any DB write. For a revision we still need the prior version.
+    let version_id = Uuid::new_v4();
+    let (submission_id, version_no, previous_version_id) = match existing_submission {
+        Some(sub_id) => {
+            let row = client
+                .query_one(
+                    "SELECT current_version_id, (SELECT COALESCE(MAX(version_no), 0) FROM versions WHERE submission_id = $1) FROM submissions WHERE id = $1",
+                    &[&sub_id],
+                )
+                .await
+                .map_err(|e| e500("load submission", e))?;
+            let prev: Option<Uuid> = row.get(0);
+            let max_no: i32 = row.get(1);
+            (sub_id, max_no + 1, prev)
+        }
+        None => (Uuid::new_v4(), 1, None),
+    };
+
+    // Phase 1 — metadata extraction (Groq), the file pin (IPFS), and similarity
+    // screening are mutually independent, so run them together instead of end
+    // to end. Similarity runs before ingest and self-excludes by submission_id,
+    // so nothing unchecked enters the record (restructure.md §5).
+    let pin_bytes = form.file_bytes.clone();
+    let pin_name = form.filename.clone();
+    let pin_file = async move {
+        match ipfs::pin_bytes(pin_bytes, &pin_name).await {
+            Ok(cid) => cid,
+            Err(e) => {
+                eprintln!("[ipfs] pin failed (continuing without): {e}");
+                String::new()
+            }
+        }
+    };
+    let sub_str = submission_id.to_string();
+    let uid_str = user.id.to_string();
+    let inst_str = user.institution_id.map(|u| u.to_string()).unwrap_or_default();
+    let (mut meta, cid, similarity_result) = tokio::join!(
+        extract_academic_metadata(&text, &form.filename),
+        pin_file,
+        vecsvc::similarity(&sub_str, &uid_str, &text),
+    );
+
     // user-supplied fields win over extracted ones
     if let Some(t) = form.fields.get("title").filter(|t| !t.is_empty()) {
         meta.title = t.clone();
@@ -525,44 +593,19 @@ async fn ingest_pipeline(
         .get("embargo_until")
         .and_then(|d| d.parse().ok());
 
-    let cid = match ipfs::pin_bytes(form.file_bytes.clone(), &form.filename).await {
-        Ok(cid) => cid,
-        Err(e) => {
-            eprintln!("[ipfs] pin failed (continuing without): {e}");
-            String::new()
-        }
-    };
-
-    // submission + version rows
-    let version_id = Uuid::new_v4();
-    let (submission_id, version_no, previous_version_id) = match existing_submission {
-        Some(sub_id) => {
-            let row = client
-                .query_one(
-                    "SELECT current_version_id, (SELECT COALESCE(MAX(version_no), 0) FROM versions WHERE submission_id = $1) FROM submissions WHERE id = $1",
-                    &[&sub_id],
-                )
-                .await
-                .map_err(|e| e500("load submission", e))?;
-            let prev: Option<Uuid> = row.get(0);
-            let max_no: i32 = row.get(1);
-            (sub_id, max_no + 1, prev)
-        }
-        None => {
-            let sub_id = Uuid::new_v4();
-            let doi = format!("10.5555/blockscribe.{}", &sub_id.to_string()[..8]);
-            client
-                .execute(
-                    "INSERT INTO submissions (id, institution_id, corresponding_author_id, title, discipline, language, visibility, license, embargo_until, doi, authors, abstract_text, keywords)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-                    &[&sub_id, &user.institution_id, &user.id, &meta.title, &meta.discipline, &meta.language,
-                      &visibility, &license, &embargo_until, &doi, &meta.authors, &meta.abstract_text, &meta.keywords],
-                )
-                .await
-                .map_err(|e| e500("insert submission", e))?;
-            (sub_id, 1, None)
-        }
-    };
+    // DB writes, now that metadata + cid are ready
+    if existing_submission.is_none() {
+        let doi = format!("10.5555/blockscribe.{}", &submission_id.to_string()[..8]);
+        client
+            .execute(
+                "INSERT INTO submissions (id, institution_id, corresponding_author_id, title, discipline, language, visibility, license, embargo_until, doi, authors, abstract_text, keywords)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+                &[&submission_id, &user.institution_id, &user.id, &meta.title, &meta.discipline, &meta.language,
+                  &visibility, &license, &embargo_until, &doi, &meta.authors, &meta.abstract_text, &meta.keywords],
+            )
+            .await
+            .map_err(|e| e500("insert submission", e))?;
+    }
 
     client
         .execute(
@@ -577,38 +620,8 @@ async fn ingest_pipeline(
         .await
         .map_err(|e| e500("set current version", e))?;
 
-    // metadata JSON to IPFS; its CID goes on-chain — metadata edits become
-    // new CIDs, which is itself an audit trail (restructure.md §3)
-    let metadata_json = json!({
-        "title": meta.title, "authors": meta.authors, "abstract": meta.abstract_text,
-        "discipline": meta.discipline, "keywords": meta.keywords, "language": meta.language,
-        "license": license, "file_hash": file_hash, "cid": cid, "version_no": version_no,
-        "institution": institution_name(),
-    });
-    let metadata_cid = ipfs::pin_bytes(metadata_json.to_string().into_bytes(), "metadata.json")
-        .await
-        .unwrap_or_default();
-    let _ = client
-        .execute("UPDATE versions SET metadata_cid = $1 WHERE id = $2", &[&metadata_cid, &version_id])
-        .await;
-
-    // supersede the previous version
-    if let Some(prev) = previous_version_id {
-        let _ = client
-            .execute("UPDATE versions SET status = 'superseded' WHERE id = $1", &[&prev])
-            .await;
-        let _ = vecsvc::set_status(&prev.to_string(), "superseded").await;
-        let prev_hash: String = client
-            .query_one("SELECT file_hash FROM versions WHERE id = $1", &[&prev])
-            .await
-            .map(|r| r.get(0))
-            .unwrap_or_default();
-        record_anchor(state, prev, "supersede", json!({"hash": prev_hash, "next": file_hash})).await;
-    }
-
-    // similarity BEFORE ingest, so a paper never matches itself and nothing
-    // unchecked enters the permanent record (restructure.md §5)
-    let similarity = match vecsvc::similarity(&submission_id.to_string(), &user.id.to_string(), &text).await {
+    // persist the similarity run (needs the version row to exist for the FK)
+    let similarity = match similarity_result {
         Ok(report) => {
             let run_id = Uuid::new_v4();
             let _ = client
@@ -635,32 +648,66 @@ async fn ingest_pipeline(
         }
     };
 
-    if let Err(e) = vecsvc::ingest(
-        &version_id.to_string(),
-        &submission_id.to_string(),
-        &user.id.to_string(),
-        &user.institution_id.map(|u| u.to_string()).unwrap_or_default(),
-        &text,
-        &meta.title,
-        &meta.discipline,
-        &meta.language,
-    )
-    .await
-    {
-        eprintln!("[vector] ingest failed (continuing): {e}");
+    // supersede the previous version
+    if let Some(prev) = previous_version_id {
+        let _ = client
+            .execute("UPDATE versions SET status = 'superseded' WHERE id = $1", &[&prev])
+            .await;
+        let _ = vecsvc::set_status(&prev.to_string(), "superseded").await;
+        let prev_hash: String = client
+            .query_one("SELECT file_hash FROM versions WHERE id = $1", &[&prev])
+            .await
+            .map(|r| r.get(0))
+            .unwrap_or_default();
+        record_anchor(&state, prev, "supersede", json!({"hash": prev_hash, "next": file_hash})).await;
     }
 
-    // anchor at submission: the timestamped priority claim (restructure.md §8)
-    let anchor = record_anchor(
-        state,
-        version_id,
-        "anchor_submission",
-        json!({
-            "hash": file_hash, "cid": cid, "meta_cid": metadata_cid,
-            "uploader": user.custodial_pubkey, "version": version_no,
-        }),
-    )
-    .await;
+    // At this point the deposit is fully durable (Postgres + IPFS file) and the
+    // author has their metadata + similarity report. The remaining work — pinning
+    // the metadata JSON, ingesting vectors into the search index (a rebuildable
+    // cache), and anchoring on-chain — is deferred to a background task so the
+    // response returns fast. The PDA is derived deterministically now; the memo
+    // tx confirms a moment later, and /api/admin/reanchor reconciles it if the
+    // chain was unreachable (restructure.md §5, §8, §15).
+    let metadata_json = json!({
+        "title": meta.title, "authors": meta.authors, "abstract": meta.abstract_text,
+        "discipline": meta.discipline, "keywords": meta.keywords, "language": meta.language,
+        "license": license, "file_hash": file_hash, "cid": cid, "version_no": version_no,
+        "institution": institution_name(),
+    });
+    let pda = chain::derive_document_pda(&file_hash)
+        .map(|(addr, _)| addr)
+        .unwrap_or_default();
+    {
+        let state = state.clone();
+        let meta_bytes = metadata_json.to_string().into_bytes();
+        let vid_str = version_id.to_string();
+        let (sub_str, uid_str, inst_str) = (sub_str.clone(), uid_str.clone(), inst_str.clone());
+        let (text, title, discipline, language) =
+            (text.clone(), meta.title.clone(), meta.discipline.clone(), meta.language.clone());
+        let (file_hash, cid, uploader) = (file_hash.clone(), cid.clone(), user.custodial_pubkey.clone());
+        tokio::spawn(async move {
+            let (metadata_cid_res, ingest_res) = tokio::join!(
+                ipfs::pin_bytes(meta_bytes, "metadata.json"),
+                vecsvc::ingest(&vid_str, &sub_str, &uid_str, &inst_str, &text, &title, &discipline, &language),
+            );
+            let metadata_cid = metadata_cid_res.unwrap_or_default();
+            if let Err(e) = ingest_res {
+                eprintln!("[vector] ingest failed (continuing): {e}");
+            }
+            if let Ok(client) = state.pool.get().await {
+                let _ = client
+                    .execute("UPDATE versions SET metadata_cid = $1 WHERE id = $2", &[&metadata_cid, &version_id])
+                    .await;
+            }
+            let memo = json!({
+                "hash": file_hash, "cid": cid, "meta_cid": metadata_cid,
+                "uploader": uploader, "version": version_no,
+            });
+            record_anchor(&state, version_id, "anchor_submission", memo).await;
+        });
+    }
+    let anchor = json!({"status": "processing", "pda_address": pda});
 
     Ok(json!({
         "submission_id": submission_id.to_string(),
@@ -672,7 +719,7 @@ async fn ingest_pipeline(
         "discipline": meta.discipline,
         "file_hash": file_hash,
         "cid": cid,
-        "metadata_cid": metadata_cid,
+        "metadata_cid": "",
         "similarity": {
             "max_score": similarity["max_score"],
             "flagged_chunks": similarity["flagged_chunks"],
@@ -692,9 +739,50 @@ async fn create_submission(state: web::Data<AppState>, req: HttpRequest, payload
         Ok(f) => f,
         Err(resp) => return resp,
     };
-    match ingest_pipeline(&state, &user, form, None).await {
+    match ingest_pipeline(state.clone(), &user, form, None).await {
         Ok(v) => HttpResponse::Ok().json(v),
         Err(resp) => resp,
+    }
+}
+
+/// Optional pre-flight check: run similarity against the whole corpus WITHOUT
+/// depositing, ingesting, or anchoring anything. Lets an author see what an
+/// editor would see before they commit to a deposit.
+#[post("/api/plagiarism-check")]
+async fn plagiarism_check(state: web::Data<AppState>, req: HttpRequest, payload: Multipart) -> impl Responder {
+    let Some(_user) = auth_user(&state, &req).await else {
+        return err_json(401, "log in to run a check");
+    };
+    let form = match read_multipart(payload).await {
+        Ok(f) => f,
+        Err(resp) => return resp,
+    };
+    let text = extract_text_from_bytes(&form.file_bytes);
+    if text.trim().is_empty() {
+        return err_json(400, "could not read any text from this file");
+    }
+    let file_hash = sha256_hex_of(&form.file_bytes);
+
+    // If this exact file is already deposited, exclude it so the report shows
+    // OTHER matches rather than a 100% self-match, and flag that fact.
+    let already: Option<Uuid> = match state.pool.get().await {
+        Ok(client) => client
+            .query_opt("SELECT submission_id FROM versions WHERE file_hash = $1", &[&file_hash])
+            .await
+            .ok()
+            .flatten()
+            .map(|r| r.get(0)),
+        Err(e) => return e500("db pool", e),
+    };
+    let exclude_submission = already.map(|s| s.to_string()).unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    match vecsvc::similarity(&exclude_submission, "", &text).await {
+        Ok(mut report) => {
+            report["already_deposited"] = json!(already.is_some());
+            report["file_hash"] = json!(file_hash);
+            HttpResponse::Ok().json(report)
+        }
+        Err(e) => e500("similarity check", e),
     }
 }
 
@@ -728,7 +816,7 @@ async fn create_version(
         Ok(f) => f,
         Err(resp) => return resp,
     };
-    match ingest_pipeline(&state, &user, form, Some(submission_id)).await {
+    match ingest_pipeline(state.clone(), &user, form, Some(submission_id)).await {
         Ok(v) => HttpResponse::Ok().json(v),
         Err(resp) => resp,
     }
@@ -1032,13 +1120,41 @@ async fn create_assignment(state: web::Data<AppState>, req: HttpRequest, body: w
     let Some(user) = auth_user(&state, &req).await else {
         return err_json(401, "not logged in");
     };
-    if user.role != "editor" {
-        return err_json(403, "only editors assign reviewers");
-    }
     let client = match state.pool.get().await {
         Ok(c) => c,
         Err(e) => return e500("db pool", e),
     };
+
+    // Editors can assign on any submission; a corresponding author can request
+    // a review of their own work (e.g. an editor asking a peer editor to review
+    // their paper). The author may never be assigned as their own reviewer.
+    let author_id: Option<Uuid> = client
+        .query_opt(
+            "SELECT s.corresponding_author_id FROM versions v JOIN submissions s ON s.id = v.submission_id WHERE v.id = $1",
+            &[&body.version_id],
+        )
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.get(0));
+    let is_author = author_id == Some(user.id);
+    if user.role != "editor" && !is_author {
+        return err_json(403, "only an editor or the paper's corresponding author can request a review");
+    }
+    if author_id == Some(body.reviewer_id) {
+        return err_json(400, "the author cannot be assigned as their own reviewer");
+    }
+    // avoid duplicate active assignments to the same reviewer
+    if let Ok(Some(_)) = client
+        .query_opt(
+            "SELECT 1 FROM assignments WHERE version_id = $1 AND reviewer_id = $2 AND state <> 'completed'",
+            &[&body.version_id, &body.reviewer_id],
+        )
+        .await
+    {
+        return err_json(409, "this reviewer is already assigned to this version");
+    }
+
     let id = Uuid::new_v4();
     if let Err(e) = client
         .execute(
@@ -1652,6 +1768,7 @@ async fn main() -> std::io::Result<()> {
             .service(list_users)
             .service(list_submissions)
             .service(create_submission)
+            .service(plagiarism_check)
             .service(create_version)
             .service(submission_detail)
             .service(verify)

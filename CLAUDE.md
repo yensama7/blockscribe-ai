@@ -79,10 +79,29 @@ download. `chunking.py` is deliberately upstream of everything; change it and
 re-run its tests first.
 
 ### Upload pipeline (all server-side, `ingest_pipeline` in main.rs)
-hash → duplicate check → extract text → metadata (Groq/fallback) → pin file +
-metadata JSON to IPFS → insert rows → similarity screen (before ingest, so a
-paper never matches itself) → ingest vectors → anchor memo tx signed by the
-institution fee payer. Users never sign anything and never pay.
+hash → duplicate check → `unsafe_upload_reason` validation (content sniff +
+reject PDFs with `/JavaScript` or `/Launch`) → **phase 1 (concurrent):** Groq
+metadata + IPFS file pin + similarity screen → DB rows + persist similarity run
+→ **background task:** metadata-JSON pin + vector ingest + memo anchor. The
+deposit response returns after the DB write (~2.5–3.5s, down from ~6s); the
+anchor's PDA is derived up front and returned as `status: "processing"`, and the
+Submit page polls `/api/verify` to flip it to "confirmed". Ingest and anchor are
+deferred because the index is a cache and the anchor is reconciled by
+`/api/admin/reanchor`. Users never sign anything and never pay.
+
+Metadata LLM is `openai/gpt-oss-20b` by default (fast; `LLM_MODEL` overrides —
+must be a model the Groq key can access). Array-valued fields (authors/keywords)
+are coerced to comma-joined strings.
+
+### Other endpoints
+- `POST /api/plagiarism-check` — pre-flight similarity vs the whole corpus, no
+  DB/ingest/anchor (powers the **Check** page).
+- `POST /api/assignments` — editors assign on any paper; the corresponding
+  author may request a review on their own paper (author can't self-review).
+- Search/related/reviewer results drop score ≤ 0 (Python side, in `similarity.py`
+  / `matching.py`).
+- `backend/seed_demo.sh` seeds editor/reviewer/author accounts + papers + an
+  assignment for demos.
 
 ### Key env vars (see `.env.example`)
 `DATABASE_URL`, `SOLANA_RPC_URL` (default local validator), `IPFS_API_URL`,

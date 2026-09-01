@@ -111,6 +111,19 @@ docker compose down -v && docker compose up -d postgres qdrant ipfs solana
 then restart the main server. The first email that signs in becomes the editor
 again.
 
+**Quickest setup — seed ready-made accounts and data** (after the stack is up):
+
+```bash
+bash backend/seed_demo.sh
+```
+
+This creates three sign-in accounts (email only, no password) and pre-loads two
+papers and one review assignment so every screen has something to show:
+
+- **editor@demo.edu** — the editor. Editorial desk, publish, retract.
+- **reviewer@demo.edu** — has a review waiting under *Review → My review assignments*.
+- **author@demo.edu** — owns the deposited papers; open one to *Request a review*.
+
 **If a deposit shows "anchor unanchored":** the local blockchain container
 sometimes wedges after the laptop sleeps. Recreate it and heal the records:
 
@@ -162,6 +175,12 @@ Say: *"Commercial plagiarism screening costs more than most departments can
 afford. This is built in, it checks meaning rather than exact words, and the
 final call always belongs to a human editor."*
 
+**Beat 3.5 — Self-check before submitting (30 sec, optional).**
+Open **Check** in the nav and drop a draft. It runs the very same similarity
+screen an editor would see, but stores nothing — no deposit, no record.
+Say: *"Honest authors can screen their own work before submitting, so they fix
+an accidental overlap before it ever becomes part of the permanent record."*
+
 **Beat 4 — Peer review with proof (2 min).**
 As editor, on **Review**, click *Match reviewers by expertise* — the system
 suggests reviewers based on what they've actually written, excluding the
@@ -190,10 +209,17 @@ We tell audiences the truth about which parts are trustless and which are not.
 - Fingerprinting, IPFS storage, on-chain anchoring with confirmations
 - Meaning-based similarity screening and search (runs on our own servers —
   unpublished manuscripts never leave the institution)
-- The whole review lifecycle with signed, anchored reviews
+- An optional pre-deposit originality **Check** that stores nothing
+- The whole review lifecycle with signed, anchored reviews; authors and editors
+  can both request a review (an author can ask a colleague to review their work)
 - Version history, embargoes, metadata-only records, retraction
 - OAI-PMH feed (the standard that lets Google Scholar index a repository) and
   Dublin Core metadata on every paper page
+- Upload validation by content, with active-content PDFs (JavaScript/launch)
+  rejected before anything is pinned
+- Deposit stays responsive: the paper and its similarity report come back in a
+  couple of seconds while the search index and the on-chain anchor finish in the
+  background (the receipt updates to "confirmed" a moment later)
 
 **Simplified for the demo (with the production path designed):**
 - Sign-in trusts the typed email; production uses university single-sign-on or
@@ -211,6 +237,18 @@ We tell audiences the truth about which parts are trustless and which are not.
   each keeps copies of the others' archives, mutual insurance.
 - Editorial decisions are human and institutional. We do not claim they are
   decentralised. The *evidence* is what nobody can tamper with.
+
+**Deliberately left for later (from the design doc, not needed to demo):**
+- Federation across many universities with cross-institution search (Phase 5).
+- Optional self-custody: power users connecting their own wallet instead of the
+  managed key.
+- A full malware-scanning engine on uploads (we validate content and block
+  active-content PDFs today; ClamAV slots in at the same boundary).
+- Rate limiting and a dedicated audit-log store for very high traffic.
+
+Everything else in `restructure.md` — the repository, content-addressed
+anchoring, the similarity engine, and the peer-review workflow — is built and
+testable in this demo.
 
 ## 8. Frequently asked questions
 

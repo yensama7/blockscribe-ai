@@ -17,6 +17,7 @@ import { BookMarked, ChevronDown, LogOut, Search, ShieldCheck, User } from 'luci
 const NAV = [
   { to: '/papers', label: 'Browse' },
   { to: '/submit', label: 'Deposit' },
+  { to: '/check', label: 'Check' },
   { to: '/verify', label: 'Verify' },
   { to: '/review', label: 'Review' },
 ];

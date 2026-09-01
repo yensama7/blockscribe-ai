@@ -19,7 +19,7 @@ def match_reviewers(embedder, store: VectorStore, abstracts_col: str, *,
     best: dict[str, dict[str, Any]] = {}
     for h in hits:
         uid = h.payload.get("uploader_id", "")
-        if not uid or uid in excluded:
+        if not uid or uid in excluded or h.score <= 0:
             continue
         if uid not in best or h.score > best[uid]["score"]:
             best[uid] = {

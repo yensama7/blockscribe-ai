@@ -157,7 +157,8 @@ def semantic_search(embedder, store: VectorStore, abstracts_col: str, *,
         return []
     vector = embedder.embed([query])[0]
     hits = store.search(abstracts_col, vector, limit=limit, filters=filters)
-    return [{"score": round(h.score, 4), **h.payload} for h in hits]
+    # drop non-matches: cosine scores <= 0 mean unrelated, not "weakly related"
+    return [{"score": round(h.score, 4), **h.payload} for h in hits if h.score > 0]
 
 
 def related_versions(embedder, store: VectorStore, abstracts_col: str, *,
@@ -168,4 +169,4 @@ def related_versions(embedder, store: VectorStore, abstracts_col: str, *,
     vector = embedder.embed([abstract])[0]
     hits = store.search(abstracts_col, vector, limit=limit,
                         filters={"must_not": {"submission_id": submission_id}})
-    return [{"score": round(h.score, 4), **h.payload} for h in hits]
+    return [{"score": round(h.score, 4), **h.payload} for h in hits if h.score > 0]

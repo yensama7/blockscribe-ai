@@ -1,4 +1,4 @@
-import { ChangeEvent, useState } from 'react';
+import { ChangeEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,43 @@ export default function Submit() {
   const [visibility, setVisibility] = useState('public');
   const [embargoUntil, setEmbargoUntil] = useState('');
   const [result, setResult] = useState<DepositResult | null>(null);
+  // The anchor is confirmed in the background after deposit; poll the public
+  // verify endpoint so the receipt flips from "anchoring…" to "confirmed".
+  const [anchorState, setAnchorState] = useState<'processing' | 'confirmed' | 'pending'>('processing');
+  const [anchorSlot, setAnchorSlot] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!result) return;
+    if (result.anchor.status === 'confirmed') {
+      setAnchorState('confirmed');
+      setAnchorSlot(result.anchor.slot ?? null);
+      return;
+    }
+    setAnchorState('processing');
+    setAnchorSlot(null);
+    let active = true;
+    let tries = 0;
+    const poll = async () => {
+      if (!active) return;
+      tries += 1;
+      try {
+        const v = await api.verifyHash(result.file_hash);
+        if (v.verified && v.anchors?.length) {
+          const submissionAnchor = v.anchors.find((a) => a.instruction === 'anchor_submission') || v.anchors[0];
+          setAnchorState('confirmed');
+          setAnchorSlot(submissionAnchor.slot);
+          return;
+        }
+      } catch {
+        /* keep polling */
+      }
+      if (!active) return;
+      if (tries < 12) setTimeout(poll, 1500);
+      else setAnchorState('pending');
+    };
+    const id = setTimeout(poll, 1200);
+    return () => { active = false; clearTimeout(id); };
+  }, [result]);
 
   const depositMutation = useMutation({
     mutationFn: () =>
@@ -137,13 +174,15 @@ export default function Submit() {
               {result.anchor.pda_address}
             </p>
             <p>
-              <span className="text-muted-foreground">Anchor:</span>{' '}
-              {result.anchor.status === 'confirmed' ? (
+              <span className="text-muted-foreground">On-chain anchor:</span>{' '}
+              {anchorState === 'confirmed' ? (
                 <Badge className="border-emerald-300 bg-emerald-100 text-emerald-800">
-                  confirmed @ slot {result.anchor.slot}
+                  confirmed @ slot {anchorSlot}
                 </Badge>
+              ) : anchorState === 'processing' ? (
+                <Badge variant="secondary">anchoring on-chain…</Badge>
               ) : (
-                <Badge variant="secondary">{result.anchor.status} — will reconcile when the chain is reachable</Badge>
+                <Badge variant="secondary">pending — will reconcile shortly</Badge>
               )}
             </p>
             <p>

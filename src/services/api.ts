@@ -152,6 +152,11 @@ export interface SimilarityReport {
   passages: SimilarityPassage[];
 }
 
+export interface PlagiarismResult extends SimilarityReport {
+  already_deposited: boolean;
+  file_hash: string;
+}
+
 export interface RelatedPaper {
   submission_id?: string;
   title?: string;
@@ -280,6 +285,12 @@ export const api = {
   },
 
   verifyHash: (hash: string) => request<VerifyResult>(`/api/verify?hash=${encodeURIComponent(hash)}`),
+
+  plagiarismCheck: (file: File): Promise<PlagiarismResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<PlagiarismResult>('/api/plagiarism-check', { method: 'POST', body: formData });
+  },
 
   search: (q: string, k = 10) =>
     request<{ mode: string; results: Paper[] }>(`/api/search?q=${encodeURIComponent(q)}&k=${k}`),

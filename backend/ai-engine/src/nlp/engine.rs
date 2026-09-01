@@ -40,15 +40,18 @@ pub fn sha256_hex_of(bytes: &[u8]) -> String {
 }
 
 /// PDF text via pdf-extract; anything else is treated as UTF-8 text.
+/// Content sniffing (magic bytes), never the file extension.
+pub fn extract_text_from_bytes(bytes: &[u8]) -> String {
+    if bytes.starts_with(b"%PDF") {
+        extract_text_from_mem(bytes).unwrap_or_default()
+    } else {
+        String::from_utf8_lossy(bytes).to_string()
+    }
+}
+
 pub async fn extract_text(path: &str) -> anyhow::Result<String> {
     let bytes = fs::read(path).await.with_context(|| format!("reading {path}"))?;
-    let is_pdf = bytes.starts_with(b"%PDF"); // content sniffing, not extension
-    let text = if is_pdf {
-        extract_text_from_mem(&bytes).unwrap_or_default()
-    } else {
-        String::from_utf8_lossy(&bytes).to_string()
-    };
-    Ok(text)
+    Ok(extract_text_from_bytes(&bytes))
 }
 
 fn fallback_metadata(text: &str, filename: &str) -> AcademicMetadata {
@@ -86,10 +89,13 @@ pub async fn extract_academic_metadata(text: &str, filename: &str) -> AcademicMe
     };
     let groq_base = env::var("GROQ_BASE")
         .unwrap_or_else(|_| "https://api.groq.com/openai/v1/chat/completions".to_string());
-    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "openai/gpt-oss-120b".to_string());
+    // gpt-oss-20b is ~2x faster than 120b and just as good at structured
+    // front-matter extraction; override with LLM_MODEL for richer summaries.
+    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "openai/gpt-oss-20b".to_string());
 
-    // first ~3000 words are plenty for front-matter metadata
-    let excerpt: String = text.split_whitespace().take(3000).collect::<Vec<_>>().join(" ");
+    // Title, authors, abstract and keywords all live in the front matter, so
+    // ~1200 words is plenty and keeps the LLM call fast.
+    let excerpt: String = text.split_whitespace().take(1200).collect::<Vec<_>>().join(" ");
 
     // temperature 0 + fixed seed => the same paper yields the same metadata on
     // every deposit, so re-processing a document is deterministic.

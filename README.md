@@ -15,7 +15,10 @@ Plain-language walkthrough and demo script: [`explanation.md`](explanation.md).
 - **Deposit** — sign in with an email (no wallet, no extension). The system
   extracts metadata, screens the full text for similarity against the whole
   corpus, replicates the file to IPFS, and anchors a timestamped priority claim
-  on Solana, signed by the institution's fee payer.
+  on Solana, signed by the institution's fee payer. Uploads are validated by
+  content and PDFs carrying JavaScript/launch actions are rejected.
+- **Check** — an optional pre-flight originality check: screen a draft against
+  the corpus *before* depositing, with nothing stored, indexed, or anchored.
 - **Verify** — anyone drops a file on the public verify page and gets a yes/no
   plus the on-chain record. The account address is derived from the file's
   SHA-256 alone (`seeds = [b"doc", hash]`), so no database sits in the trust path.
@@ -58,6 +61,26 @@ npm install && npm run dev
 ```
 
 Open http://localhost:8081. The **first email to sign in becomes the editor**.
+
+### Seed a demo dataset
+
+For a ready-to-present setup (three accounts, two papers, one review
+assignment), run once the stack is up:
+
+```bash
+bash backend/seed_demo.sh
+```
+
+Then sign in (email only, no password) as:
+
+| Email | Role | Use for |
+|-------|------|---------|
+| `editor@demo.edu` | editor | Editorial desk: assign reviewers, publish, retract |
+| `reviewer@demo.edu` | reviewer | Review → *My review assignments*: write + submit a signed review |
+| `author@demo.edu` | author | Account (your deposits); open a paper to *Request a review* |
+
+`editor@demo.edu` must be the **first** account created (it becomes the editor),
+which the seed script handles.
 
 ## Configuration (environment variables)
 
@@ -120,13 +143,29 @@ process environment (set them in the shell, or via `docker compose`).
 | Rust Actix API (`backend/ai-engine/`) | 5000 | Auth, submissions, lifecycle, anchoring, verify, OAI-PMH |
 | Python FastAPI (`backend/ai-engine/src/vectored/`) | 8001 | Chunking, embeddings, similarity, reviewer matching |
 | Postgres 16 (docker) | 5432 | Primary datastore |
-| Qdrant (docker) | 6333 | Vector index (a rebuildable cache) |
+| Qdrant (docker) | 6333 | Vector index (a rebuildable cache) — visual dashboard at [localhost:6333/dashboard](http://localhost:6333/dashboard) |
 | IPFS Kubo (docker) | 5001/8080 | Content-addressed storage |
 | solana-test-validator (docker) | 8899 | Local chain for anchoring |
 
 The Anchor program for content-addressed PDAs lives in
 [`chain/document-registry/`](chain/README.md); until it is deployed the backend
 anchors via memo transactions that already commit each record's future PDA.
+
+### Inspecting the vector database
+
+Open the Qdrant dashboard at **http://localhost:6333/dashboard**, pick a
+collection, and use the **Visualize** tab to see a 2D projection of the
+embeddings (nearby points = semantically similar text). Try this query to
+colour points by field:
+
+```json
+{ "limit": 500, "color_by": { "payload": "discipline" } }
+```
+
+Collections are named `{kind}__{model}__{dim}` — `abstracts__…` holds one point
+per paper (good for topic clusters); `chunks__…` holds every ~500-word passage
+(this is what plagiarism detection queries — a copied passage lands on top of
+its source).
 
 ## Tests
 

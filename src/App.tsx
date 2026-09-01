@@ -9,6 +9,7 @@ import Home from './pages/Home';
 import Papers from './pages/Papers';
 import PaperDetail from './pages/PaperDetail';
 import Submit from './pages/Submit';
+import Check from './pages/Check';
 import Verify from './pages/Verify';
 import Review from './pages/Review';
 import Account from './pages/Account';
@@ -36,6 +37,7 @@ const App = () => (
               <Route path="/papers" element={<Papers />} />
               <Route path="/papers/:id" element={<PaperDetail />} />
               <Route path="/submit" element={<Submit />} />
+              <Route path="/check" element={<Check />} />
               <Route path="/verify" element={<Verify />} />
               <Route path="/review" element={<Review />} />
               <Route path="/account" element={<Account />} />
