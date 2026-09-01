@@ -1,31 +1,45 @@
-import { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { ReactNode, useState } from 'react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useWallet } from '@/context/WalletContext';
+import { useAuth } from '@/context/AuthContext';
+import { BookOpenCheck } from 'lucide-react';
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `text-sm ${isActive ? 'text-foreground font-medium' : 'text-muted-foreground'} hover:text-foreground`;
 
 export const AppLayout = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { availableWallets, connectWallet, disconnectWallet, walletConnected, walletPill } = useWallet();
+  const { user, login, logout, isEditor } = useAuth();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const connect = async () => {
-    if (!availableWallets.length) {
-      toast({ title: 'No wallet found', description: 'Install a Solana wallet extension.', variant: 'destructive' });
-      return;
-    }
+  const handleLogin = async () => {
+    setBusy(true);
     try {
-      const preferred = availableWallets[0];
-      await connectWallet(preferred.provider, preferred.name);
-      toast({ title: 'Wallet linked', description: `${preferred.name} connected.` });
+      const loggedIn = await login(email, name);
+      setDialogOpen(false);
+      toast({
+        title: `Welcome, ${loggedIn.display_name}`,
+        description: loggedIn.role === 'editor' ? 'You have editor access.' : 'You can now deposit papers.',
+      });
     } catch (error) {
       toast({
-        title: 'Wallet connection failed',
-        description: error instanceof Error ? error.message : 'Unable to connect wallet.',
+        title: 'Sign in failed',
+        description: error instanceof Error ? error.message : 'Could not sign in.',
         variant: 'destructive',
       });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -33,29 +47,76 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     <div className="min-h-screen neural-network">
       <header className="border-b border-border/40 bg-card/70 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="font-semibold text-lg">Blockscribe</Link>
-            <Link to="/books" className="text-sm text-muted-foreground hover:text-foreground">All Books A–Z</Link>
-            <Link to="/hot" className="text-sm text-muted-foreground hover:text-foreground">Hot Books</Link>
-            <Link to="/account" className="text-sm text-muted-foreground hover:text-foreground">My Account</Link>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to="/" className="flex items-center gap-2 font-semibold text-lg">
+              <BookOpenCheck className="h-5 w-5" /> Blockscribe
+            </Link>
+            <NavLink to="/papers" className={navLinkClass}>Browse</NavLink>
+            <NavLink to="/submit" className={navLinkClass}>Deposit</NavLink>
+            <NavLink to="/verify" className={navLinkClass}>Verify</NavLink>
+            <NavLink to="/review" className={navLinkClass}>Review</NavLink>
+            <NavLink to="/account" className={navLinkClass}>Account</NavLink>
           </div>
 
           <div className="flex items-center gap-2">
             <Input
-              placeholder="Search books..."
+              placeholder="Search research..."
               onKeyDown={(event) => {
                 const query = event.currentTarget.value.trim();
                 if (event.key === 'Enter' && query) {
-                  navigate(`/books?q=${encodeURIComponent(query)}`);
+                  navigate(`/papers?q=${encodeURIComponent(query)}`);
                 }
               }}
               className="w-56"
             />
-            <Badge variant={walletConnected ? 'default' : 'secondary'}>{walletPill}</Badge>
-            {walletConnected ? (
-              <Button variant="outline" onClick={disconnectWallet}>Remove wallet</Button>
+            {user ? (
+              <>
+                <Badge variant={isEditor ? 'default' : 'secondary'}>
+                  {user.display_name} • {user.role}
+                </Badge>
+                <Button variant="outline" onClick={logout}>Sign out</Button>
+              </>
             ) : (
-              <Button onClick={connect}>Link wallet</Button>
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>Sign in</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Sign in with your institutional email</DialogTitle>
+                    <DialogDescription>
+                      No wallet, no extension, no seed phrase. A secure signing key is created and
+                      held for you by your institution.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="login-email">Email</Label>
+                      <Input
+                        id="login-email"
+                        type="email"
+                        placeholder="you@university.edu"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="login-name">Display name (optional)</Label>
+                      <Input
+                        id="login-name"
+                        placeholder="Dr. Amina Bello"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                      />
+                    </div>
+                    <Button onClick={handleLogin} disabled={busy || !email.includes('@')} className="w-full">
+                      {busy ? 'Signing in...' : 'Sign in'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             )}
           </div>
         </div>

@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Cache dependency compilation separately from source.
 # Must stub BOTH targets: binary and the auto-detected lib (src/lib.rs).
-# rust:bookworm (not slim) has the full C toolchain rusqlite bundled needs.
+# rust:bookworm (not slim) keeps the full C toolchain available.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src/bin \
     && echo 'fn main(){}' > src/bin/main.rs \

@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=dev
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   ipfs:
     image: ipfs/kubo:latest
     ports:
@@ -23,9 +40,12 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - DB_PATH=/app/data/archive.db
-    volumes:
-      - archive_db:/app/data
+      - QDRANT_URL=http://qdrant:6333
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-384}
+    depends_on:
+      - qdrant
 
   rust-backend:
     build:
@@ -35,13 +55,17 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - DB_PATH=/app/data/archive.db
+      - DATABASE_URL=postgres://postgres:dev@postgres:5432/postgres
       - PYTHON_ENGINE_URL=http://python-engine:8001
+      - IPFS_API_URL=http://ipfs:5001
+      - IPFS_GATEWAY_URL=http://127.0.0.1:8080
       - SOLANA_RPC_URL=${SOLANA_RPC_URL:-http://solana:8899}
-      - DEVELOPER_WALLET=${DEVELOPER_WALLET:-}
-    volumes:
-      - archive_db:/app/data
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - INSTITUTION_NAME=${INSTITUTION_NAME:-Demo University}
+      - EDITOR_EMAILS=${EDITOR_EMAILS:-}
     depends_on:
+      - postgres
+      - qdrant
       - ipfs
       - solana
       - python-engine
@@ -56,5 +80,6 @@ services:
       - rust-backend
 
 volumes:
+  pg_data:
+  qdrant_data:
   ipfs_data:
-  archive_db:

@@ -1,65 +1,104 @@
-use anyhow::{anyhow, Context};
+//! Text extraction and academic metadata extraction.
+//! Groq does the LLM work; a rule-based parser is the fallback so the
+//! pipeline never dies with the AI switched off (restructure.md §6).
+
+use anyhow::Context;
 use dotenv::dotenv;
 use pdf_extract::extract_text_from_mem;
 use regex::Regex;
-use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::path::Path;
 use tokio::fs;
 
-fn fallback_metadata_from_path(file_path: &str) -> ExtractedMetaData {
-    let file_name = Path::new(file_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Untitled document")
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcademicMetadata {
+    pub title: String,
+    pub authors: String,
+    pub abstract_text: String,
+    pub discipline: String,
+    pub keywords: String,
+    pub language: String,
+}
+
+pub async fn compute_sha256_hex<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
+    let bytes = fs::read(&path)
+        .await
+        .with_context(|| format!("reading file {:?}", path.as_ref()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(hex::encode(hasher.finalize()))
+}
+
+pub fn sha256_hex_of(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+/// PDF text via pdf-extract; anything else is treated as UTF-8 text.
+pub async fn extract_text(path: &str) -> anyhow::Result<String> {
+    let bytes = fs::read(path).await.with_context(|| format!("reading {path}"))?;
+    let is_pdf = bytes.starts_with(b"%PDF"); // content sniffing, not extension
+    let text = if is_pdf {
+        extract_text_from_mem(&bytes).unwrap_or_default()
+    } else {
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+    Ok(text)
+}
+
+fn fallback_metadata(text: &str, filename: &str) -> AcademicMetadata {
+    let title = text
+        .lines()
+        .map(str::trim)
+        .find(|l| l.len() > 8 && l.len() < 200)
+        .unwrap_or(filename)
         .to_string();
 
-    ExtractedMetaData {
-        title: file_name,
-        difficulty: "Unknown".to_string(),
-        genre: "General".to_string(),
-        summary: "Metadata extraction fallback used because AI extraction is unavailable.".to_string(),
+    let abstract_re = Regex::new(r"(?is)abstract\s*[:\n]\s*(.{50,1500}?)(\n\s*\n|introduction|$)").unwrap();
+    let abstract_text = abstract_re
+        .captures(text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().trim().to_string())
+        .unwrap_or_else(|| text.split_whitespace().take(60).collect::<Vec<_>>().join(" "));
+
+    AcademicMetadata {
+        title,
+        authors: String::new(),
+        abstract_text,
+        discipline: "General".to_string(),
+        keywords: String::new(),
+        language: "en".to_string(),
     }
 }
 
-pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<ExtractedMetaData> {
-    let bytes = fs::read(&file_path)
-        .await
-        .with_context(|| format!("failed to read file: {file_path}"))?;
-
-    let extracted_txt = extract_text_from_mem(&bytes)
-        .unwrap_or_else(|_| "Unable to extract text from file; using fallback metadata.".to_string());
-
+/// Extract title, authors, abstract, discipline, keywords, language.
+/// Falls back to the rule-based parser on any failure.
+pub async fn extract_academic_metadata(text: &str, filename: &str) -> AcademicMetadata {
     dotenv().ok();
-
+    let fallback = fallback_metadata(text, filename);
+    let Ok(groq_key) = env::var("GROQ_API_KEY") else {
+        return fallback;
+    };
     let groq_base = env::var("GROQ_BASE")
         .unwrap_or_else(|_| "https://api.groq.com/openai/v1/chat/completions".to_string());
-    let groq_key = match env::var("GROQ_API_KEY") {
-        Ok(key) => key,
-        Err(_) => return Ok(fallback_metadata_from_path(&file_path)),
-    };
+    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
+
+    // first ~3000 words are plenty for front-matter metadata
+    let excerpt: String = text.split_whitespace().take(3000).collect::<Vec<_>>().join(" ");
 
     let body = json!({
-        "model": "openai/gpt-oss-120b",
+        "model": model,
         "messages": [
-            {
-                "role": "system",
-                "content": "You are an assistant that extracts structured metadata from documents. Return markdown fields for Genre, Title, Difficulty Level, and Summary."
-            },
-            {
-                "role": "user",
-                "content": format!(
-                    "From the following text, extract:\n- Genre\n- Summary\n- Difficulty level (Beginner/Intermediate/Advanced)\n- Title\n\nText:\n{}",
-                    extracted_txt
-                )
-            }
+            {"role": "system", "content": "You extract metadata from academic papers. Respond with only a JSON object with string fields: title, authors (comma separated), abstract, discipline, keywords (comma separated), language (ISO 639-1 code)."},
+            {"role": "user", "content": format!("Extract the metadata from this paper text:\n\n{excerpt}")}
         ],
-        "include_reasoning": false,
-        "temperature": 0.3
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2
     });
 
     let response = Client::new()
@@ -69,97 +108,35 @@ pub async fn get_meta_data_response(file_path: String) -> anyhow::Result<Extract
         .send()
         .await;
 
-    let response_text = match response {
-        Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
-        _ => return Ok(fallback_metadata_from_path(&file_path)),
+    let parsed: Option<Value> = match response {
+        Ok(resp) if resp.status().is_success() => resp
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|v| {
+                v["choices"][0]["message"]["content"]
+                    .as_str()
+                    .map(|s| s.trim().trim_start_matches("```json").trim_matches('`').to_string())
+            })
+            .and_then(|content| serde_json::from_str(&content).ok()),
+        _ => None,
     };
 
-    let re = Regex::new(
-        r"(?s)\*\*Genre:\*\*\s*(.*?)\s+.*?\*\*Title:\*\*\s*(.*?)\s+.*?\*\*Difficulty\s*Level:\*\*\s*(.*?)\s+.*?\*\*Summary.*?:\*\*\s*(.*?)$",
-    )
-    .map_err(|e| anyhow!("regex initialization error: {e}"))?;
+    let Some(meta) = parsed else { return fallback };
+    let get = |key: &str, alt: &str| {
+        meta.get(key)
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| alt.to_string())
+    };
 
-    if let Some(caps) = re.captures(&response_text) {
-        return Ok(ExtractedMetaData {
-            genre: caps
-                .get(1)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "General".to_string()),
-            title: caps
-                .get(2)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "Untitled document".to_string()),
-            difficulty: caps
-                .get(3)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            summary: caps
-                .get(4)
-                .map(|v| v.as_str().trim().to_string())
-                .unwrap_or_else(|| "No summary generated.".to_string()),
-        });
+    AcademicMetadata {
+        title: get("title", &fallback.title),
+        authors: get("authors", ""),
+        abstract_text: get("abstract", &fallback.abstract_text),
+        discipline: get("discipline", "General"),
+        keywords: get("keywords", ""),
+        language: get("language", "en"),
     }
-
-    Ok(fallback_metadata_from_path(&file_path))
-}
-
-pub async fn package_hash_and_cid<P: AsRef<Path>>(path: P) -> anyhow::Result<FileRecord> {
-    let file_hash = compute_sha256_hex(&path).await?;
-    let file_cid = upload_file_to_ipfs_kubo(&path).await?;
-
-    Ok(FileRecord { file_hash, file_cid })
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ExtractedMetaData {
-    pub title: String,
-    pub difficulty: String,
-    pub genre: String,
-    pub summary: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileRecord {
-    pub file_hash: String,
-    pub file_cid: String,
-}
-
-pub async fn compute_sha256_hex<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
-    let bytes = fs::read(&path)
-        .await
-        .with_context(|| format!("reading file {:?}", path.as_ref()))?;
-
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    let digest = hasher.finalize();
-
-    Ok(hex::encode(digest))
-}
-
-async fn upload_file_to_ipfs_kubo<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
-    let bytes = fs::read(&path).await?;
-    let filename = path
-        .as_ref()
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file")
-        .to_string();
-
-    let part = Part::bytes(bytes).file_name(filename);
-    let form = Form::new().part("file", part);
-
-    let resp_text = Client::new()
-        .post("http://127.0.0.1:5001/api/v0/add")
-        .multipart(form)
-        .send()
-        .await?
-        .text()
-        .await?;
-
-    let v: Value = serde_json::from_str(&resp_text)?;
-    let cid = v
-        .get("Hash")
-        .and_then(|h| h.as_str())
-        .ok_or_else(|| anyhow!("ipfs response missing 'Hash' field"))?;
-    Ok(cid.to_string())
 }

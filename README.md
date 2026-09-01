@@ -1,118 +1,81 @@
-# Blockscribe AI
+# Blockscribe
 
-Blockscribe AI is a document library with blockchain anchoring.
+**An academic preservation repository for African universities.** Research is
+preserved permanently, and its originality, ownership, and review history are
+provable cryptographically — by anyone, without trusting the operator.
 
-It has three main runtime components:
+> Preservation infrastructure that happens to use a blockchain.
+> Not a blockchain project that happens to store papers.
 
-- **Rust Actix server** (`backend/ai-engine/src/bin/main.rs`)  
-  Upload flow, metadata persistence, integrity endpoints, and Solana memo anchoring.
-- **Python FastAPI vector service** (`backend/ai-engine/src/vectored/vector_service.py`)  
-  Analytics and vector-search endpoints.
-- **React/Vite frontend** (`src/`)  
-  Wallet-gated UI for upload/download/integrity verification.
+Full design rationale: [`restructure.md`](restructure.md).
+Plain-language walkthrough and demo script: [`explanation.md`](explanation.md).
 
-## What the app is expected to do
+## What it does
 
-- Users can navigate without a wallet.
-- Any document action (upload, integrity check, download) requires a connected Solana wallet.
-- Upload flow:
-  1. File is uploaded to IPFS Kubo.
-  2. SHA-256 hash + CID are anchored on Solana memo.
-  3. Record is stored in SQLite with uploader wallet.
-- Integrity flow:
-  - User uploads a document to check whether its hash exists in stored/on-chain anchored records.
-- Download flow:
-  - Backend returns a fee-split plan (uploader reimbursement + developer cut) before download.
+- **Deposit** — sign in with an email (no wallet, no extension). The system
+  extracts metadata, screens the full text for similarity against the whole
+  corpus, replicates the file to IPFS, and anchors a timestamped priority claim
+  on Solana, signed by the institution's fee payer.
+- **Verify** — anyone drops a file on the public verify page and gets a yes/no
+  plus the on-chain record. The account address is derived from the file's
+  SHA-256 alone (`seeds = [b"doc", hash]`), so no database sits in the trust path.
+- **Peer review** — editors get side-by-side similarity reports and
+  expertise-matched reviewer suggestions; reviews are pinned to IPFS, hashed,
+  signed by the reviewer's key, and anchored. Blind by default.
+- **Lifecycle** — submitted → under review → reviewed → published, with
+  append-only retraction and version lineage (supersede links) on-chain.
+- **Discoverability** — DOIs on every record, OAI-PMH endpoint for Google
+  Scholar/BASE/CORE harvesting, Dublin Core metadata on landing pages.
+- **Free reads. Always.** There is no download fee anywhere in the system.
 
-## Prerequisites
+## Quick start
 
-Install locally before running scripts:
-
-- Node.js + npm
-- Python 3.10+
-- Rust (stable toolchain)
-- IPFS Kubo CLI (`ipfs`)
-- Solana CLI (`solana`, `solana-test-validator`)
-
-> `backend/install.sh` can help bootstrap dependencies, but review it first because it uses `sudo apt-get`.
-
-## Quick start (recommended)
-
-From repo root:
+Prerequisites: Docker, Rust, Python 3.12, Node 20+.
 
 ```bash
-cd backend
-chmod +x run_server.sh
-./run_server.sh
+# one command (infra in Docker, services on the host):
+cd backend && ./run_server.sh
 ```
 
-This starts:
-
-- IPFS daemon
-- Solana test validator (only for local validator mode)
-- Python vector service on `8001`
-- Rust API on `5000`
-- Frontend on `8081` (or `FRONTEND_PORT`)
-
-### Endpoints
-
-- Frontend: http://127.0.0.1:8081
-- Rust API health: http://127.0.0.1:5000/health
-- Python FastAPI docs: http://127.0.0.1:8001/docs
-- IPFS API/Web UI (local install defaults): http://127.0.0.1:5001/webui
-
-
-## Devnet mode (optional for Solana integration testing)
-
-The backend memo writer defaults to devnet if `SOLANA_RPC_URL` is not set, but `run_server.sh` defaults `SOLANA_RPC_URL` to local validator (`http://127.0.0.1:8899`) so local full-stack startup works out of the box.
-## Devnet mode (optional for Solana integration testing)
-
-The backend memo writer defaults to devnet if `SOLANA_RPC_URL` is not set, but `run_server.sh` defaults `SOLANA_RPC_URL` to local validator (`http://127.0.0.1:8899`) so local full-stack startup works out of the box.
-
-
-Run with devnet:
+or step by step:
 
 ```bash
-export SOLANA_RPC_URL=https://api.devnet.solana.com
-# optional: signer used for memo txs (defaults to ~/.config/solana/id.json)
-export SOLANA_KEYPAIR_PATH=$HOME/.config/solana/id.json
+docker compose up -d postgres qdrant ipfs solana
 
-cd backend
-./run_server.sh
-```
-
-If `SOLANA_RPC_URL` points to `http://localhost:8899`, `run_server.sh` will start `solana-test-validator`. Otherwise it will use the external RPC and skip local validator startup.
-
-## Manual run (if you prefer)
-
-Open separate terminals and run:
-
-```bash
-# 1) vector service
+# Python vector service (:8001)
 cd backend/ai-engine
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && .venv/Scripts/activate    # source .venv/bin/activate on unix
 pip install -r src/vectored/requirements.txt
-python src/vectored/vector_service.py
-```
+cd src/vectored && python vector_service.py
 
-```bash
-# 2) rust api
+# Rust API (:5000)
 cargo run --manifest-path backend/ai-engine/Cargo.toml
+
+# Frontend (:8081)
+npm install && npm run dev
 ```
+
+Open http://localhost:8081. The **first email to sign in becomes the editor**.
+
+## Architecture
+
+| Component | Port | Role |
+|-----------|------|------|
+| React/Vite frontend (`src/`) | 8081 | Email-login UI |
+| Rust Actix API (`backend/ai-engine/`) | 5000 | Auth, submissions, lifecycle, anchoring, verify, OAI-PMH |
+| Python FastAPI (`backend/ai-engine/src/vectored/`) | 8001 | Chunking, embeddings, similarity, reviewer matching |
+| Postgres 16 (docker) | 5432 | Primary datastore |
+| Qdrant (docker) | 6333 | Vector index (a rebuildable cache) |
+| IPFS Kubo (docker) | 5001/8080 | Content-addressed storage |
+| solana-test-validator (docker) | 8899 | Local chain for anchoring |
+
+The Anchor program for content-addressed PDAs lives in
+[`chain/document-registry/`](chain/README.md); until it is deployed the backend
+anchors via memo transactions that already commit each record's future PDA.
+
+## Tests
 
 ```bash
-# 3) frontend
-npm install
-npm run dev -- --host 0.0.0.0 --port 8081
+cd backend/ai-engine/src/vectored && python -m pytest -q   # vector layer (no Docker needed)
+cargo test --manifest-path backend/ai-engine/Cargo.toml --lib  # chain wire format + PDA
 ```
-
-## Notes / current implementation caveats
-
-- Rust currently binds to `127.0.0.1:5000`.
-- Configure runtime env vars:
-  - Solana RPC: `SOLANA_RPC_URL` (default: `https://api.devnet.solana.com`)
-  - Solana signer keypair: `SOLANA_KEYPAIR_PATH` (default: `~/.config/solana/id.json`)
-  - Frontend developer wallet: `VITE_DEVELOPER_WALLET`
-  - Backend developer wallet: `DEVELOPER_WALLET`
-  - Frontend port: `FRONTEND_PORT` (default in scripts: `8081`)

@@ -1,6 +1,6 @@
 [package]
 name = "ai-engine"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [[bin]]
@@ -18,10 +18,17 @@ serde_json = "=1.0.145"
 serde = { version = "1.0.225", features = ["derive"] }
 regex = "1.11.2"
 hex = "0.4"
-rusqlite = { version = "0.37.0", features = ["bundled"] }
 actix-web = "4"
 actix-multipart = "0.6"
 futures-util = "0.3"
 sanitize-filename = "0.5"
-uuid = { version = "1", features = ["v4", "std"] }
+uuid = { version = "1", features = ["v4", "v5", "std", "serde"] }
 actix-cors = "0.7.1"
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4", "with-serde_json-1"] }
+deadpool-postgres = "0.14"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+curve25519-dalek = "4"
+bs58 = "0.5"
+base64 = "0.22"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }

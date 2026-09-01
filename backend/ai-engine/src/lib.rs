@@ -1,6 +1,8 @@
+pub mod chain;
+pub mod db;
+pub mod ipfs;
 pub mod nlp;
-pub mod database;
+pub mod oai;
+pub mod vecsvc;
 
-pub use nlp::engine::{ExtractedMetaData, FileRecord};
-pub use nlp::engine::{get_meta_data_response, package_hash_and_cid};
-pub use database::database::{add_to_or_create_database, ensure_archive_schema};
+pub use nlp::engine::{AcademicMetadata, compute_sha256_hex, extract_academic_metadata, extract_text, sha256_hex_of};
