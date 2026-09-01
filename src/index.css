@@ -2,101 +2,97 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Design system for an academic preservation repository.
+   Scholarly, print-adjacent, trustworthy — light paper, ink text, a deep
+   library-blue primary and a preservation-green accent. All colors HSL. */
 
 @layer base {
   :root {
-    /* Blockchain-themed color palette - Brightened */
-    --background: 220 20% 8%;
-    --foreground: 210 40% 98%;
+    --background: 40 33% 97%;          /* warm paper */
+    --foreground: 222 34% 14%;         /* ink */
 
-    --card: 220 15% 12%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 34% 14%;
 
-    --popover: 220 15% 12%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 34% 14%;
 
-    --primary: 258 90% 70%;
-    --primary-foreground: 220 20% 8%;
+    --primary: 222 55% 28%;            /* deep library blue */
+    --primary-foreground: 40 33% 97%;
 
-    --secondary: 220 14% 18%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 38 24% 93%;           /* soft parchment */
+    --secondary-foreground: 222 34% 20%;
 
-    --muted: 220 14% 18%;
-    --muted-foreground: 215 20.2% 70%;
+    --muted: 38 22% 93%;
+    --muted-foreground: 222 12% 42%;
 
-    --accent: 142 76% 45%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 158 52% 30%;             /* preservation green */
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 68% 46%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 25%;
-    --input: 220 13% 25%;
-    --ring: 258 90% 70%;
+    --gold: 36 64% 45%;                /* scholarly highlight */
 
-    --radius: 0.75rem;
+    --border: 38 18% 86%;
+    --input: 38 18% 86%;
+    --ring: 222 55% 28%;
 
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(258 90% 66%), hsl(142 76% 36%));
-    --gradient-cyber: linear-gradient(45deg, hsl(258 90% 66%), hsl(195 100% 50%));
-    --gradient-neural: linear-gradient(90deg, hsl(258 90% 66%), hsl(312 78% 70%));
-    
-    /* Glows */
-    --glow-primary: 0 0 20px hsl(258 90% 66% / 0.4);
-    --glow-accent: 0 0 15px hsl(142 76% 36% / 0.3);
-    --glow-cyber: 0 0 25px hsl(195 100% 50% / 0.3);
+    --radius: 0.5rem;
 
-    --sidebar-background: 220 20% 8%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 258 90% 70%;
-    --sidebar-primary-foreground: 220 20% 8%;
-    --sidebar-accent: 220 14% 18%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 220 13% 25%;
-    --sidebar-ring: 258 90% 70%;
+    --shadow-sm: 0 1px 2px hsl(222 34% 14% / 0.05);
+    --shadow-card: 0 1px 3px hsl(222 34% 14% / 0.06), 0 6px 20px hsl(222 34% 14% / 0.04);
+    --shadow-lift: 0 4px 12px hsl(222 34% 14% / 0.08), 0 12px 32px hsl(222 34% 14% / 0.06);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 34% 14%;
+    --sidebar-primary: 222 55% 28%;
+    --sidebar-primary-foreground: 40 33% 97%;
+    --sidebar-accent: 38 24% 93%;
+    --sidebar-accent-foreground: 222 34% 20%;
+    --sidebar-border: 38 18% 86%;
+    --sidebar-ring: 222 55% 28%;
   }
 
   .dark {
-    /* Enhanced dark mode for blockchain aesthetic - Brightened */
-    --background: 220 20% 6%;
-    --foreground: 210 40% 98%;
+    --background: 222 40% 8%;
+    --foreground: 40 30% 94%;
 
-    --card: 220 15% 10%;
-    --card-foreground: 210 40% 98%;
+    --card: 222 34% 12%;
+    --card-foreground: 40 30% 94%;
 
-    --popover: 220 15% 10%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 222 34% 12%;
+    --popover-foreground: 40 30% 94%;
 
-    --primary: 258 90% 75%;
-    --primary-foreground: 220 20% 6%;
+    --primary: 214 70% 66%;
+    --primary-foreground: 222 40% 8%;
 
-    --secondary: 220 14% 15%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 222 24% 18%;
+    --secondary-foreground: 40 30% 94%;
 
-    --muted: 220 14% 15%;
-    --muted-foreground: 215 20.2% 75%;
+    --muted: 222 24% 18%;
+    --muted-foreground: 220 14% 66%;
 
-    --accent: 142 76% 50%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 158 48% 48%;
+    --accent-foreground: 222 40% 8%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 20%;
-    --input: 220 13% 20%;
-    --ring: 258 90% 75%;
-    
-    --sidebar-background: 220 20% 6%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 258 90% 75%;
-    --sidebar-primary-foreground: 220 20% 6%;
-    --sidebar-accent: 220 14% 15%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 220 13% 20%;
-    --sidebar-ring: 258 90% 75%;
+    --gold: 36 68% 58%;
+
+    --border: 222 20% 22%;
+    --input: 222 20% 22%;
+    --ring: 214 70% 66%;
+
+    --sidebar-background: 222 34% 12%;
+    --sidebar-foreground: 40 30% 94%;
+    --sidebar-primary: 214 70% 66%;
+    --sidebar-primary-foreground: 222 40% 8%;
+    --sidebar-accent: 222 24% 18%;
+    --sidebar-accent-foreground: 40 30% 94%;
+    --sidebar-border: 222 20% 22%;
+    --sidebar-ring: 214 70% 66%;
   }
 }
 
@@ -106,60 +102,54 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground overflow-x-hidden;
+    @apply bg-background text-foreground;
+    font-feature-settings: "liga" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Blockchain UI effects */
-  .blockchain-glow {
-    box-shadow: var(--glow-primary);
+  h1, h2, h3, h4, .font-display {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer components {
+  /* Soft, paper-like page backdrop — the antithesis of the old crypto glow. */
+  .page-bg {
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(60rem 40rem at 80% -10%, hsl(var(--primary) / 0.06), transparent 60%),
+      radial-gradient(50rem 40rem at 0% 0%, hsl(var(--accent) / 0.05), transparent 55%);
   }
 
-  .cyber-glow {
-    box-shadow: var(--glow-cyber);
+  .hero-rule {
+    height: 3px;
+    width: 3.5rem;
+    background: hsl(var(--gold));
+    border-radius: 2px;
   }
 
-  .accent-glow {
-    box-shadow: var(--glow-accent);
+  .card-hover {
+    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-2px);
+    border-color: hsl(var(--primary) / 0.35);
   }
 
-  .gradient-primary {
-    background: var(--gradient-primary);
+  .shadow-card {
+    box-shadow: var(--shadow-card);
   }
 
-  .gradient-cyber {
-    background: var(--gradient-cyber);
+  .text-gold {
+    color: hsl(var(--gold));
   }
 
-  .gradient-neural {
-    background: var(--gradient-neural);
-  }
-
-  .gradient-text {
-    background: var(--gradient-primary);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  /* Neural network animation */
-  .neural-network {
-    background-image: 
-      radial-gradient(circle at 20% 20%, hsl(258 90% 70% / 0.15) 0%, transparent 50%),
-      radial-gradient(circle at 80% 80%, hsl(142 76% 45% / 0.15) 0%, transparent 50%),
-      radial-gradient(circle at 40% 70%, hsl(195 100% 50% / 0.15) 0%, transparent 50%);
-    animation: neural-pulse 8s ease-in-out infinite;
-  }
-
-  @keyframes neural-pulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 0.6; }
-  }
-
-  /* Hexagon grid pattern */
-  .hex-pattern {
-    background-image: 
-      radial-gradient(circle at 50% 50%, hsl(258 90% 66% / 0.05) 0%, transparent 50%);
-    background-size: 60px 60px;
-    background-position: 0 0, 30px 30px;
+  /* Subtle hairline separators in the scholarly style. */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--border)), transparent);
   }
 }

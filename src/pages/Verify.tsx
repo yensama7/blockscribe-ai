@@ -68,13 +68,13 @@ export default function Verify() {
       </Card>
 
       {result && (
-        <Card className={result.exists ? 'border-emerald-500/40' : 'border-red-500/40'}>
+        <Card className={result.exists ? 'border-accent/40 bg-accent/5' : 'border-red-300 bg-red-50'}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {result.exists ? (
-                <><ShieldCheck className="h-5 w-5 text-emerald-400" /> Document found in the archive</>
+                <><ShieldCheck className="h-5 w-5 text-accent" /> Document found in the archive</>
               ) : (
-                <><ShieldX className="h-5 w-5 text-red-400" /> Not in the archive</>
+                <><ShieldX className="h-5 w-5 text-destructive" /> Not in the archive</>
               )}
             </CardTitle>
             {result.exists && result.record && (
@@ -101,7 +101,7 @@ export default function Verify() {
                 </p>
                 {result.verified ? (
                   <div className="space-y-1">
-                    <Badge className="bg-emerald-500/20 text-emerald-300">Anchored on Solana</Badge>
+                    <Badge className="border-emerald-300 bg-emerald-100 text-emerald-800">Anchored on Solana</Badge>
                     {result.anchors?.map((anchor, i) => (
                       <p key={i} className="text-xs break-all text-muted-foreground">
                         {anchor.instruction}: tx {anchor.signature.slice(0, 32)}… @ slot {anchor.slot}

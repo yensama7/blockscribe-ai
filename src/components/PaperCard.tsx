@@ -1,43 +1,55 @@
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Paper } from '@/services/api';
+import { FileText } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, string> = {
-  submitted: 'bg-slate-500/20 text-slate-300',
-  under_review: 'bg-amber-500/20 text-amber-300',
-  reviewed: 'bg-sky-500/20 text-sky-300',
-  published: 'bg-emerald-500/20 text-emerald-300',
-  retracted: 'bg-red-500/20 text-red-300',
-  superseded: 'bg-purple-500/20 text-purple-300',
+  submitted: 'border-slate-300 bg-slate-100 text-slate-700',
+  under_review: 'border-amber-300 bg-amber-100 text-amber-800',
+  reviewed: 'border-sky-300 bg-sky-100 text-sky-800',
+  published: 'border-emerald-300 bg-emerald-100 text-emerald-800',
+  retracted: 'border-red-300 bg-red-100 text-red-800',
+  superseded: 'border-purple-300 bg-purple-100 text-purple-800',
 };
 
 export const StatusBadge = ({ status }: { status: string }) => (
-  <Badge variant="outline" className={STATUS_STYLES[status] || ''}>
+  <Badge variant="outline" className={`capitalize ${STATUS_STYLES[status] || ''}`}>
     {status.replace('_', ' ')}
   </Badge>
 );
 
 export const PaperCard = ({ paper }: { paper: Paper }) => (
-  <div className="rounded border border-border/40 px-4 py-3 hover:border-border transition-colors">
+  <Link
+    to={`/papers/${paper.id}`}
+    className="group flex flex-col rounded-xl border border-border bg-card p-5 shadow-card card-hover"
+  >
     <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <Link to={`/papers/${paper.id}`} className="font-medium hover:underline">
-          {paper.title}
-        </Link>
-        <p className="text-xs text-muted-foreground mt-1">
-          {paper.authors || paper.author_name || 'Unknown authors'}
-          {paper.institution && ` • ${paper.institution}`}
-        </p>
-        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{paper.abstract}</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          {paper.discipline} • v{paper.version_no} • DOI {paper.doi}
-          {typeof paper.score === 'number' && ` • relevance ${(paper.score * 100).toFixed(0)}%`}
-        </p>
-      </div>
-      <div className="flex flex-col items-end gap-1 shrink-0">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <FileText className="h-4 w-4" />
+      </span>
+      <div className="flex flex-col items-end gap-1">
         <StatusBadge status={paper.status} />
-        {!paper.full_text_available && <Badge variant="secondary">metadata only</Badge>}
+        {!paper.full_text_available && <Badge variant="secondary" className="text-[10px]">metadata only</Badge>}
       </div>
     </div>
-  </div>
+
+    <h3 className="mt-3 font-display text-lg font-semibold leading-snug text-foreground group-hover:text-primary">
+      {paper.title}
+    </h3>
+    <p className="mt-1 text-sm text-muted-foreground">
+      {paper.authors || paper.author_name || 'Unknown authors'}
+    </p>
+    <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{paper.abstract}</p>
+
+    <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+      {paper.discipline && <span className="font-medium text-foreground/80">{paper.discipline}</span>}
+      <span>v{paper.version_no}</span>
+      {paper.doi && <span className="truncate">DOI {paper.doi}</span>}
+      {typeof paper.score === 'number' && (
+        <span className="ml-auto rounded bg-accent/10 px-1.5 py-0.5 font-medium text-accent">
+          {(paper.score * 100).toFixed(0)}% match
+        </span>
+      )}
+    </div>
+  </Link>
 );

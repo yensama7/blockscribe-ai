@@ -86,19 +86,23 @@ pub async fn extract_academic_metadata(text: &str, filename: &str) -> AcademicMe
     };
     let groq_base = env::var("GROQ_BASE")
         .unwrap_or_else(|_| "https://api.groq.com/openai/v1/chat/completions".to_string());
-    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
+    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "openai/gpt-oss-120b".to_string());
 
     // first ~3000 words are plenty for front-matter metadata
     let excerpt: String = text.split_whitespace().take(3000).collect::<Vec<_>>().join(" ");
 
+    // temperature 0 + fixed seed => the same paper yields the same metadata on
+    // every deposit, so re-processing a document is deterministic.
     let body = json!({
         "model": model,
         "messages": [
-            {"role": "system", "content": "You extract metadata from academic papers. Respond with only a JSON object with string fields: title, authors (comma separated), abstract, discipline, keywords (comma separated), language (ISO 639-1 code)."},
+            {"role": "system", "content": "You extract bibliographic metadata from academic papers. Respond with ONLY a JSON object with these exact string fields: title, authors (comma separated, in document order), abstract (verbatim from the paper, or a one-sentence summary if none is present), discipline (a single broad field such as \"Public Health\" or \"Computer Science\"), keywords (comma separated, 3-6 terms), language (ISO 639-1 code). Do not invent authors or data. Use the empty string for any field you cannot determine."},
             {"role": "user", "content": format!("Extract the metadata from this paper text:\n\n{excerpt}")}
         ],
         "response_format": {"type": "json_object"},
-        "temperature": 0.2
+        "temperature": 0,
+        "top_p": 1,
+        "seed": 42
     });
 
     let response = Client::new()
@@ -123,12 +127,20 @@ pub async fn extract_academic_metadata(text: &str, filename: &str) -> AcademicMe
     };
 
     let Some(meta) = parsed else { return fallback };
+    // The model returns comma-separated strings most of the time, but
+    // occasionally an array (esp. authors/keywords) — coerce either to a
+    // clean comma-joined string so no field silently drops.
     let get = |key: &str, alt: &str| {
-        meta.get(key)
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| alt.to_string())
+        let value = match meta.get(key) {
+            Some(Value::String(s)) => s.trim().to_string(),
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
+                .collect::<Vec<_>>()
+                .join(", "),
+            _ => String::new(),
+        };
+        if value.is_empty() { alt.to_string() } else { value }
     };
 
     AcademicMetadata {

@@ -119,7 +119,7 @@ export default function Submit() {
       </Card>
 
       {result && (
-        <Card className="border-emerald-500/40">
+        <Card className="border-accent/40 bg-accent/5">
           <CardHeader>
             <CardTitle>Deposit receipt</CardTitle>
             <CardDescription>
@@ -139,7 +139,7 @@ export default function Submit() {
             <p>
               <span className="text-muted-foreground">Anchor:</span>{' '}
               {result.anchor.status === 'confirmed' ? (
-                <Badge className="bg-emerald-500/20 text-emerald-300">
+                <Badge className="border-emerald-300 bg-emerald-100 text-emerald-800">
                   confirmed @ slot {result.anchor.slot}
                 </Badge>
               ) : (
@@ -149,11 +149,11 @@ export default function Submit() {
             <p>
               <span className="text-muted-foreground">Similarity screening:</span>{' '}
               {result.similarity.flagged_chunks > 0 ? (
-                <Badge className="bg-amber-500/20 text-amber-300">
+                <Badge className="border-amber-300 bg-amber-100 text-amber-800">
                   {result.similarity.passages} passage(s) matched existing work — an editor will see the side-by-side
                 </Badge>
               ) : (
-                <Badge className="bg-emerald-500/20 text-emerald-300">no matches above threshold</Badge>
+                <Badge className="border-emerald-300 bg-emerald-100 text-emerald-800">no matches above threshold</Badge>
               )}
             </p>
           </CardContent>

@@ -42,3 +42,5 @@ fee_payer.json
 uploads/
 archive.db
 qdrant_dev/
+
+backend/ai-engine/.env

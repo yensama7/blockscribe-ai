@@ -20,7 +20,7 @@ export const SimilarityPanel = ({ summary }: { summary: SimilaritySummary }) => 
       </CardHeader>
       <CardContent className="space-y-3">
         {!flagged && (
-          <p className="text-sm text-emerald-400">
+          <p className="text-sm font-medium text-accent">
             No passages matched the existing corpus above the threshold.
           </p>
         )}

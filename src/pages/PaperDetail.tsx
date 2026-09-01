@@ -92,9 +92,9 @@ export default function PaperDetail() {
   return (
     <div className="space-y-6">
       {retraction && (
-        <Card className="border-red-500/50">
+        <Card className="border-red-300 bg-red-50">
           <CardContent className="pt-6">
-            <p className="text-sm text-red-400 font-medium">
+            <p className="text-sm font-medium text-red-800">
               This paper has been retracted. The record below remains for the permanent scholarly
               record; the retraction itself is anchored on-chain and readable by citation tools.
             </p>
