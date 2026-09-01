@@ -931,6 +931,29 @@ async fn submission_detail(state: web::Data<AppState>, req: HttpRequest, path: w
         .unwrap_or_default();
     let version_ids: Vec<Uuid> = versions.iter().map(|r| r.get::<_, Uuid>(0)).collect();
 
+    // Access follows the review assignment: an assigned reviewer (and the
+    // editor / corresponding author) can read the full text even when the paper
+    // is embargoed or metadata-only. Otherwise the paper's visibility governs.
+    let is_reviewer = if let Some(v) = viewer.as_ref() {
+        client
+            .query_opt(
+                "SELECT 1 FROM assignments WHERE reviewer_id = $1 AND version_id = ANY($2) LIMIT 1",
+                &[&v.id, &version_ids],
+            )
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+    } else {
+        false
+    };
+    if (is_editor || is_author || is_reviewer) && base["full_text_available"] == json!(false) {
+        base["full_text_available"] = json!(true);
+        base["cid"] = json!(row.get::<_, String>(15));
+        base["access_reason"] =
+            json!(if is_reviewer && !is_editor && !is_author { "assigned reviewer" } else { "owner or editor" });
+    }
+
     let anchors = client
         .query(
             "SELECT version_id, instruction, pda_address, signature, slot, status, confirmed_at
@@ -1522,16 +1545,88 @@ async fn retract_version(
     resp
 }
 
-// ---------- editor tools ----------
+// ---------- reviewer tools ----------
 
+fn review_timeout_days() -> i32 {
+    env::var("REVIEW_TIMEOUT_DAYS").ok().and_then(|v| v.parse().ok()).unwrap_or(7)
+}
+
+/// Portable reviewer reputation: a track record that follows the person across
+/// every paper they've reviewed (restructure.md §5 / Phase 5). Computed live
+/// from their global review history. Returns a map user_id -> reputation json.
+async fn reputation_for(
+    client: &deadpool_postgres::Client,
+    ids: &[Uuid],
+) -> HashMap<Uuid, Value> {
+    let mut out: HashMap<Uuid, Value> = HashMap::new();
+    if ids.is_empty() {
+        return out;
+    }
+    let timeout_days = review_timeout_days();
+
+    // publications authored
+    let mut pubs: HashMap<Uuid, i64> = HashMap::new();
+    if let Ok(rows) = client
+        .query(
+            "SELECT corresponding_author_id, count(*) FROM submissions WHERE corresponding_author_id = ANY($1) GROUP BY 1",
+            &[&ids],
+        )
+        .await
+    {
+        for r in &rows {
+            pubs.insert(r.get(0), r.get(1));
+        }
+    }
+
+    // review track record
+    let review_rows = client
+        .query(
+            "SELECT a.reviewer_id,
+                    count(*)::bigint AS assigned,
+                    count(rv.id)::bigint AS completed,
+                    count(rv.id) FILTER (WHERE rv.signed_at - a.assigned_at <= make_interval(days => $2))::bigint AS on_time,
+                    COALESCE(avg(EXTRACT(EPOCH FROM (rv.signed_at - a.assigned_at)) / 86400.0), 0)::float8 AS avg_days
+             FROM assignments a LEFT JOIN reviews rv ON rv.assignment_id = a.id
+             WHERE a.reviewer_id = ANY($1) GROUP BY a.reviewer_id",
+            &[&ids, &timeout_days],
+        )
+        .await
+        .unwrap_or_default();
+    let mut review_stats: HashMap<Uuid, (i64, i64, i64, f64)> = HashMap::new();
+    for r in &review_rows {
+        review_stats.insert(r.get(0), (r.get(1), r.get(2), r.get(3), r.get(4)));
+    }
+
+    for &id in ids {
+        let publications = *pubs.get(&id).unwrap_or(&0);
+        let (assigned, completed, on_time, avg_days) =
+            *review_stats.get(&id).unwrap_or(&(0, 0, 0, 0.0));
+        let response_rate = if assigned > 0 { completed as f64 / assigned as f64 } else { 0.0 };
+        let on_time_rate = if completed > 0 { on_time as f64 / completed as f64 } else { 0.0 };
+        out.insert(
+            id,
+            json!({
+                "publications": publications,
+                "reviews_completed": completed,
+                "assignments_total": assigned,
+                "response_rate": (response_rate * 100.0).round() / 100.0,
+                "on_time_rate": (on_time_rate * 100.0).round() / 100.0,
+                "avg_turnaround_days": (avg_days * 10.0).round() / 10.0,
+            }),
+        );
+    }
+    out
+}
+
+/// Ranked reviewer candidates for a submission: expertise-matched (from their
+/// own past work, author excluded), annotated with publication count and
+/// reputation, ordered by relevance then productivity. Available to the editor
+/// and to the paper's corresponding author (who may add an extra reviewer).
 #[get("/api/reviewers/match")]
 async fn reviewer_match(state: web::Data<AppState>, req: HttpRequest, query: web::Query<HashMap<String, String>>) -> impl Responder {
     let Some(user) = auth_user(&state, &req).await else {
         return err_json(401, "not logged in");
     };
-    if user.role != "editor" {
-        return err_json(403, "only editors match reviewers");
-    }
     let Some(submission_id) = query.get("submission_id").and_then(|s| s.parse::<Uuid>().ok()) else {
         return err_json(400, "missing submission_id");
     };
@@ -1552,6 +1647,9 @@ async fn reviewer_match(state: web::Data<AppState>, req: HttpRequest, query: web
     };
     let abstract_text: String = row.get(0);
     let author_id: Option<Uuid> = row.get(1);
+    if user.role != "editor" && author_id != Some(user.id) {
+        return err_json(403, "only an editor or the paper's corresponding author can pick reviewers");
+    }
     // conflicts: the author can never review their own paper
     let exclude = author_id.map(|u| vec![u.to_string()]).unwrap_or_default();
 
@@ -1570,21 +1668,47 @@ async fn reviewer_match(state: web::Data<AppState>, req: HttpRequest, query: web
                 .iter()
                 .map(|r| (r.get::<_, Uuid>(0).to_string(), (r.get(1), r.get(2))))
                 .collect();
-            let candidates: Vec<Value> = hits
+            let reputation = reputation_for(&client, &ids).await;
+            let mut candidates: Vec<Value> = hits
                 .iter()
                 .filter_map(|h| {
                     let uid = h["user_id"].as_str()?;
                     let (name, email) = by_id.get(uid)?;
+                    let rep = uid.parse::<Uuid>().ok().and_then(|u| reputation.get(&u)).cloned().unwrap_or(json!({}));
                     Some(json!({
                         "user_id": uid, "display_name": name, "email": email,
                         "score": h["score"], "evidence_submission_id": h["evidence_submission_id"],
+                        "publications": rep.get("publications").cloned().unwrap_or(json!(0)),
+                        "reputation": rep,
                     }))
                 })
                 .collect();
+            // rank by expertise relevance, then by how prolific the author is
+            candidates.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                let pa = a["publications"].as_i64().unwrap_or(0);
+                let pb = b["publications"].as_i64().unwrap_or(0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal).then(pb.cmp(&pa))
+            });
             HttpResponse::Ok().json(json!({"candidates": candidates}))
         }
         Err(e) => e500("reviewer matching", e),
     }
+}
+
+/// The signed-in user's own reviewer reputation (for the account page).
+#[get("/api/reputation")]
+async fn my_reputation(state: web::Data<AppState>, req: HttpRequest) -> impl Responder {
+    let Some(user) = auth_user(&state, &req).await else {
+        return err_json(401, "not logged in");
+    };
+    let client = match state.pool.get().await {
+        Ok(c) => c,
+        Err(e) => return e500("db pool", e),
+    };
+    let rep = reputation_for(&client, &[user.id]).await;
+    HttpResponse::Ok().json(rep.get(&user.id).cloned().unwrap_or(json!({})))
 }
 
 #[get("/api/similarity/{version_id}")]
@@ -1929,6 +2053,7 @@ async fn main() -> std::io::Result<()> {
             .service(publish_version)
             .service(retract_version)
             .service(reviewer_match)
+            .service(my_reputation)
             .service(similarity_report)
             .service(rebuild_index)
             .service(reanchor)

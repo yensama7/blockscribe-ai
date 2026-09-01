@@ -217,12 +217,23 @@ export interface Assignment {
   version_status: string;
 }
 
+export interface Reputation {
+  publications?: number;
+  reviews_completed: number;
+  assignments_total: number;
+  response_rate: number; // 0..1
+  on_time_rate: number; // 0..1
+  avg_turnaround_days: number;
+}
+
 export interface ReviewerCandidate {
   user_id: string;
   display_name: string;
   email: string;
   score: number;
   evidence_submission_id: string;
+  publications: number;
+  reputation: Reputation;
 }
 
 export interface Stats {
@@ -299,6 +310,8 @@ export const api = {
     request<{ candidates: ReviewerCandidate[] }>(
       `/api/reviewers/match?submission_id=${encodeURIComponent(submissionId)}`,
     ),
+
+  myReputation: () => request<Reputation>('/api/reputation'),
 
   assignReviewer: (versionId: string, reviewerId: string) =>
     postJson<{ assignment_id: string; anchor: Anchor }>('/api/assignments', {

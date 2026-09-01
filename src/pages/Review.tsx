@@ -11,47 +11,22 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { StatusBadge } from '@/components/PaperCard';
-import { api, Paper, ReviewerCandidate } from '@/services/api';
+import { ReviewerPicker } from '@/components/ReviewerPicker';
+import { api } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { UserSearch } from 'lucide-react';
 
 const EditorDesk = () => {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [candidates, setCandidates] = useState<Record<string, ReviewerCandidate[]>>({});
-  const [manualReviewer, setManualReviewer] = useState<Record<string, string>>({});
-
   const { data: papers = [] } = useQuery({ queryKey: ['papers', {}], queryFn: () => api.listPapers() });
-  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: api.listUsers });
-
   const inFlight = papers.filter((p) => ['submitted', 'under_review', 'reviewed'].includes(p.status));
-
-  const findReviewers = async (paper: Paper) => {
-    try {
-      const { candidates: found } = await api.matchReviewers(paper.id);
-      setCandidates((prev) => ({ ...prev, [paper.id]: found }));
-      if (!found.length) {
-        toast({ title: 'No matches yet', description: 'No other researchers with related work — assign manually below.' });
-      }
-    } catch (error) {
-      toast({ title: 'Matching failed', description: String(error), variant: 'destructive' });
-    }
-  };
-
-  const assignMutation = useMutation({
-    mutationFn: ({ versionId, reviewerId }: { versionId: string; reviewerId: string }) =>
-      api.assignReviewer(versionId, reviewerId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['papers'] });
-      toast({ title: 'Reviewer assigned', description: 'Status moved to under review and anchored.' });
-    },
-    onError: (error) => toast({ title: 'Assignment failed', description: String(error), variant: 'destructive' }),
-  });
 
   return (
     <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Reviewers are matched by expertise and assigned automatically when a paper is deposited. Add
+        another expertise-matched reviewer here if you'd like an extra opinion.
+      </p>
       {inFlight.length === 0 && (
-        <p className="text-sm text-muted-foreground">No submissions awaiting editorial action.</p>
+        <p className="text-sm text-muted-foreground">No submissions currently in review.</p>
       )}
       {inFlight.map((paper) => (
         <Card key={paper.id}>
@@ -68,60 +43,8 @@ const EditorDesk = () => {
               <StatusBadge status={paper.status} />
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" onClick={() => findReviewers(paper)}>
-                <UserSearch className="mr-2 h-4 w-4" /> Match reviewers by expertise
-              </Button>
-              <Select
-                value={manualReviewer[paper.id] || ''}
-                onValueChange={(value) => setManualReviewer((prev) => ({ ...prev, [paper.id]: value }))}
-              >
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="…or pick any researcher" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users
-                    .filter((u) => u.id !== paper.author_id)
-                    .map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.display_name} ({u.email})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <Button
-                size="sm"
-                disabled={!manualReviewer[paper.id] || assignMutation.isPending}
-                onClick={() =>
-                  assignMutation.mutate({ versionId: paper.version_id, reviewerId: manualReviewer[paper.id] })
-                }
-              >
-                Assign
-              </Button>
-            </div>
-            {candidates[paper.id]?.map((candidate) => (
-              <div
-                key={candidate.user_id}
-                className="flex items-center justify-between rounded border border-border/40 px-3 py-2"
-              >
-                <div>
-                  <p className="text-sm">{candidate.display_name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {candidate.email} • expertise match {(candidate.score * 100).toFixed(0)}%
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  disabled={assignMutation.isPending}
-                  onClick={() =>
-                    assignMutation.mutate({ versionId: paper.version_id, reviewerId: candidate.user_id })
-                  }
-                >
-                  Assign
-                </Button>
-              </div>
-            ))}
+          <CardContent>
+            <ReviewerPicker submissionId={paper.id} versionId={paper.version_id} label="Add a reviewer" />
           </CardContent>
         </Card>
       ))}

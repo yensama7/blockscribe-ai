@@ -17,6 +17,12 @@ export default function Account() {
     enabled: Boolean(user),
   });
 
+  const { data: reputation } = useQuery({
+    queryKey: ['reputation'],
+    queryFn: api.myReputation,
+    enabled: Boolean(user),
+  });
+
   if (!user) {
     return (
       <Card>
@@ -59,6 +65,42 @@ export default function Account() {
             <Button variant="outline" size="sm" onClick={rebuild}>
               Rebuild search index (disaster-recovery drill)
             </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Reviewer reputation</CardTitle>
+          <CardDescription>
+            Your track record as a reviewer — it follows you across every paper you review, and it's
+            what the expertise matcher uses to surface good, reliable reviewers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {reputation && reputation.assignments_total > 0 ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="rounded-lg border border-border/70 bg-secondary/40 p-4">
+                <p className="font-display text-2xl font-semibold text-primary">{reputation.reviews_completed}</p>
+                <p className="mt-1 text-xs text-muted-foreground">reviews completed</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-secondary/40 p-4">
+                <p className="font-display text-2xl font-semibold text-primary">{Math.round(reputation.response_rate * 100)}%</p>
+                <p className="mt-1 text-xs text-muted-foreground">response rate</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-secondary/40 p-4">
+                <p className="font-display text-2xl font-semibold text-primary">{Math.round(reputation.on_time_rate * 100)}%</p>
+                <p className="mt-1 text-xs text-muted-foreground">on time</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-secondary/40 p-4">
+                <p className="font-display text-2xl font-semibold text-primary">{reputation.avg_turnaround_days}</p>
+                <p className="mt-1 text-xs text-muted-foreground">avg days to review</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No reviews yet — once you're assigned and submit reviews, your reputation builds here.
+            </p>
           )}
         </CardContent>
       </Card>

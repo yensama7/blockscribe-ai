@@ -7,15 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { PaperCard, StatusBadge } from '@/components/PaperCard';
 import { SimilarityPanel } from '@/components/SimilarityPanel';
+import { ReviewerPicker } from '@/components/ReviewerPicker';
 import { api, gatewayLink } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { Download, FileUp, ShieldCheck, UserPlus } from 'lucide-react';
+import { Download, FileUp, ShieldCheck } from 'lucide-react';
 
 // Dublin Core / Schema.org metadata on the landing page (restructure.md §10)
 const setMetaTags = (tags: Record<string, string>) => {
@@ -37,7 +35,6 @@ export default function PaperDetail() {
   const { user, isEditor } = useAuth();
   const [retractReason, setRetractReason] = useState('');
   const [revisionFile, setRevisionFile] = useState<File | null>(null);
-  const [reviewerId, setReviewerId] = useState('');
 
   const { data: paper, isLoading, error } = useQuery({
     queryKey: ['paper', id],
@@ -84,22 +81,6 @@ export default function PaperDetail() {
       toast({ title: `Version ${result.version_no} deposited`, description: 'Previous version marked superseded.' });
     },
     onError: (e) => toast({ title: 'Revision failed', description: String(e), variant: 'destructive' }),
-  });
-
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.listUsers,
-    enabled: Boolean(user),
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: (rid: string) => api.assignReviewer(paper?.version_id || '', rid),
-    onSuccess: () => {
-      refresh();
-      setReviewerId('');
-      toast({ title: 'Review requested', description: 'Reviewer assigned; the paper is now under review and anchored.' });
-    },
-    onError: (e) => toast({ title: 'Request failed', description: String(e instanceof Error ? e.message : e), variant: 'destructive' }),
   });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading paper...</p>;
@@ -261,31 +242,12 @@ export default function PaperDetail() {
             <CardTitle>Add a reviewer</CardTitle>
             <CardDescription>
               Reviewers are matched by expertise and assigned automatically on deposit. Add another
-              reviewer here — including a fellow editor — for an extra opinion. They'll find it under
-              “My review assignments”. The author can't be assigned to their own paper.
+              expertise-matched reviewer — including a fellow editor — for an extra opinion. They'll
+              find it under “My review assignments”. The author can't review their own paper.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-2">
-            <Select value={reviewerId} onValueChange={setReviewerId}>
-              <SelectTrigger className="w-72"><SelectValue placeholder="Choose a reviewer" /></SelectTrigger>
-              <SelectContent>
-                {users
-                  .filter((u) => u.id !== paper.author_id)
-                  .map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.display_name} · {u.role} ({u.email})
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              disabled={!reviewerId || assignMutation.isPending}
-              onClick={() => assignMutation.mutate(reviewerId)}
-            >
-              <UserPlus className="mr-2 h-4 w-4" />
-              {assignMutation.isPending ? 'Requesting…' : 'Request review'}
-            </Button>
+          <CardContent>
+            <ReviewerPicker submissionId={paper.id} versionId={paper.version_id} label="Add a reviewer" />
           </CardContent>
         </Card>
       )}

@@ -222,7 +222,11 @@ We tell audiences the truth about which parts are trustless and which are not.
   auto-assigned by expertise on deposit, a paper is only "reviewed" once all of
   them respond (with a timeout so one silent reviewer can't stall it), and an
   editor can never rule on their own submission
-- Authors and editors can add extra reviewers (an author can ask a colleague to review their work)
+- Authors and editors can add extra reviewers from a searchable, expertise-ranked
+  list that shows each candidate's publications and **reviewer reputation** — a
+  track record (reviews done, on-time rate) that follows the person
+- Access follows the assignment: an assigned reviewer can read an embargoed or
+  metadata-only paper they've been asked to review; nobody else can
 - Version history, embargoes, metadata-only records, retraction
 - OAI-PMH feed (the standard that lets Google Scholar index a repository) and
   Dublin Core metadata on every paper page

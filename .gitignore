@@ -44,3 +44,4 @@ archive.db
 qdrant_dev/
 
 backend/ai-engine/.env
+CLAUDE.md

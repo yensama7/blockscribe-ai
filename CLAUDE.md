@@ -107,6 +107,17 @@ are coerced to comma-joined strings.
   request if the acting editor is the paper's corresponding author — another
   editor must decide. The frontend hides editorial actions for editor-authors
   and shows an amber note.
+- **Portable reviewer reputation:** `reputation_for` computes per-user stats
+  (publications, reviews completed, response rate, on-time rate, avg turnaround)
+  from global history. `GET /api/reputation` (self) feeds the account page.
+- **Reviewer picking:** `/api/reviewers/match` is now editor-*or*-author, and
+  each candidate is enriched with publications + reputation and ranked by
+  expertise then productivity. The UI is a searchable combobox
+  (`ReviewerPicker`, Popover+Command) — the old "Match reviewers" button and
+  raw dropdowns are gone.
+- **Read access follows the assignment:** in `submission_detail`, an assigned
+  reviewer (plus editor/author) can read an embargoed / metadata-only paper's
+  full text; everyone else is governed by visibility.
 
 ### Other endpoints
 - `POST /api/plagiarism-check` — pre-flight similarity vs the whole corpus, no
