@@ -93,6 +93,21 @@ Metadata LLM is `openai/gpt-oss-20b` by default (fast; `LLM_MODEL` overrides —
 must be a model the Groq key can access). Array-valued fields (authors/keywords)
 are coerced to comma-joined strings.
 
+### Peer-review policy (main.rs)
+- **Auto-assign on deposit:** the background task calls `auto_assign_reviewers`,
+  which matches the top `AUTO_ASSIGN_REVIEWERS` (default 5) reviewers by
+  expertise (excluding the author), assigns them, and moves the version to
+  `under_review` + anchors `set_under_review`. Editors *add* reviewers, they
+  don't do the initial assignment.
+- **Reviewed gating:** `submit_review` only sets `reviewed` (+ `finalize_review`
+  anchor) once every assignment for the version is `completed`. A startup
+  background sweeper finalises stragglers after `REVIEW_TIMEOUT_DAYS` (checks
+  every `REVIEW_SWEEP_SECS`; set both low to demo).
+- **Editor conflict of interest:** `transition` (publish/retract) rejects the
+  request if the acting editor is the paper's corresponding author — another
+  editor must decide. The frontend hides editorial actions for editor-authors
+  and shows an amber note.
+
 ### Other endpoints
 - `POST /api/plagiarism-check` — pre-flight similarity vs the whole corpus, no
   DB/ingest/anchor (powers the **Check** page).

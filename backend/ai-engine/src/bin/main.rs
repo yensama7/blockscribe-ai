@@ -422,6 +422,76 @@ async fn record_anchor(state: &AppState, version_id: Uuid, instruction: &str, mu
     }
 }
 
+/// Automatically match and assign the top reviewers by expertise when a paper
+/// is deposited — this is the system's job, not the editor's (the editor can
+/// still add more reviewers). Candidates are ranked from their own past work
+/// and the author is excluded. Moves the version to `under_review` and anchors
+/// the transition once.
+async fn auto_assign_reviewers(
+    state: &AppState,
+    version_id: Uuid,
+    author_id: Option<Uuid>,
+    abstract_text: &str,
+) {
+    if abstract_text.trim().is_empty() {
+        return;
+    }
+    let limit: usize = env::var("AUTO_ASSIGN_REVIEWERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let exclude = author_id.map(|a| vec![a.to_string()]).unwrap_or_default();
+    let matched = match vecsvc::match_reviewers(abstract_text, exclude).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[review] auto-match failed (editor can assign manually): {e}");
+            return;
+        }
+    };
+    let candidates = matched["results"].as_array().cloned().unwrap_or_default();
+    let Ok(client) = state.pool.get().await else { return };
+
+    let mut assigned = 0;
+    for candidate in candidates.iter().take(limit) {
+        let Some(uid) = candidate["user_id"].as_str().and_then(|s| s.parse::<Uuid>().ok()) else {
+            continue;
+        };
+        if let Ok(Some(_)) = client
+            .query_opt("SELECT 1 FROM assignments WHERE version_id = $1 AND reviewer_id = $2", &[&version_id, &uid])
+            .await
+        {
+            continue; // already assigned
+        }
+        let id = Uuid::new_v4();
+        if client
+            .execute(
+                "INSERT INTO assignments (id, version_id, reviewer_id) VALUES ($1, $2, $3)",
+                &[&id, &version_id, &uid],
+            )
+            .await
+            .is_ok()
+        {
+            assigned += 1;
+        }
+    }
+
+    if assigned > 0 {
+        let _ = client
+            .execute(
+                "UPDATE versions SET status = 'under_review' WHERE id = $1 AND status = 'submitted'",
+                &[&version_id],
+            )
+            .await;
+        let _ = vecsvc::set_status(&version_id.to_string(), "under_review").await;
+        let hash: String = client
+            .query_one("SELECT file_hash FROM versions WHERE id = $1", &[&version_id])
+            .await
+            .map(|r| r.get(0))
+            .unwrap_or_default();
+        record_anchor(state, version_id, "set_under_review", json!({"hash": hash, "auto_assigned": assigned})).await;
+    }
+}
+
 // ---------- submission pipeline ----------
 
 struct UploadForm {
@@ -685,6 +755,8 @@ async fn ingest_pipeline(
         let (sub_str, uid_str, inst_str) = (sub_str.clone(), uid_str.clone(), inst_str.clone());
         let (text, title, discipline, language) =
             (text.clone(), meta.title.clone(), meta.discipline.clone(), meta.language.clone());
+        let abstract_text = meta.abstract_text.clone();
+        let author_id = user.id;
         let (file_hash, cid, uploader) = (file_hash.clone(), cid.clone(), user.custodial_pubkey.clone());
         tokio::spawn(async move {
             let (metadata_cid_res, ingest_res) = tokio::join!(
@@ -705,6 +777,8 @@ async fn ingest_pipeline(
                 "uploader": uploader, "version": version_no,
             });
             record_anchor(&state, version_id, "anchor_submission", memo).await;
+            // auto-assign expertise-matched reviewers (the system's job, §5)
+            auto_assign_reviewers(&state, version_id, Some(author_id), &abstract_text).await;
         });
     }
     let anchor = json!({"status": "processing", "pda_address": pda});
@@ -1286,19 +1360,14 @@ async fn submit_review(state: web::Data<AppState>, req: HttpRequest, body: web::
     let _ = client
         .execute("UPDATE assignments SET state = 'completed' WHERE id = $1", &[&body.assignment_id])
         .await;
-    let _ = client
-        .execute(
-            "UPDATE versions SET status = 'reviewed' WHERE id = $1 AND status IN ('submitted', 'under_review')",
-            &[&version_id],
-        )
-        .await;
-    let _ = vecsvc::set_status(&version_id.to_string(), "reviewed").await;
 
     let file_hash: String = client
         .query_one("SELECT file_hash FROM versions WHERE id = $1", &[&version_id])
         .await
         .map(|r| r.get(0))
         .unwrap_or_default();
+
+    // anchor this individual review (attach_review)
     let anchor = record_anchor(
         &state,
         version_id,
@@ -1311,7 +1380,36 @@ async fn submit_review(state: web::Data<AppState>, req: HttpRequest, body: web::
                  &[&anchor["signature"].as_str().unwrap_or(""), &review_id])
         .await;
 
-    HttpResponse::Ok().json(json!({"review_id": review_id.to_string(), "review_hash": review_hash, "anchor": anchor}))
+    // A version is only 'reviewed' once EVERY assigned reviewer has submitted.
+    // Stragglers are finalised by the timeout sweeper (REVIEW_TIMEOUT_DAYS).
+    let (total, done): (i64, i64) = client
+        .query_one(
+            "SELECT count(*), count(*) FILTER (WHERE state = 'completed') FROM assignments WHERE version_id = $1",
+            &[&version_id],
+        )
+        .await
+        .map(|r| (r.get(0), r.get(1)))
+        .unwrap_or((0, 0));
+    let all_reviewed = total > 0 && done == total;
+    if all_reviewed {
+        let _ = client
+            .execute(
+                "UPDATE versions SET status = 'reviewed' WHERE id = $1 AND status IN ('submitted', 'under_review')",
+                &[&version_id],
+            )
+            .await;
+        let _ = vecsvc::set_status(&version_id.to_string(), "reviewed").await;
+        record_anchor(&state, version_id, "finalize_review", json!({"hash": file_hash})).await;
+    }
+
+    HttpResponse::Ok().json(json!({
+        "review_id": review_id.to_string(),
+        "review_hash": review_hash,
+        "anchor": anchor,
+        "reviews_submitted": done,
+        "reviews_expected": total,
+        "version_reviewed": all_reviewed,
+    }))
 }
 
 // ---------- lifecycle transitions ----------
@@ -1334,6 +1432,22 @@ async fn transition(
         Ok(c) => c,
         Err(e) => return e500("db pool", e),
     };
+
+    // Conflict of interest: an editor may never make the editorial decision on
+    // their own submission — another editor has to publish or retract it.
+    let author_id: Option<Uuid> = client
+        .query_opt(
+            "SELECT s.corresponding_author_id FROM versions v JOIN submissions s ON s.id = v.submission_id WHERE v.id = $1",
+            &[&version_id],
+        )
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.get(0));
+    if author_id == Some(user.id) {
+        return err_json(403, "you can't publish or retract your own paper — another editor must make that decision");
+    }
+
     let updated = match client
         .execute("UPDATE versions SET status = $1 WHERE id = $2", &[&new_status, &version_id])
         .await
@@ -1741,6 +1855,42 @@ async fn main() -> std::io::Result<()> {
     );
 
     let state = web::Data::new(AppState { pool, fee_payer });
+
+    // Review-timeout sweeper: a version under review whose oldest assignment is
+    // older than REVIEW_TIMEOUT_DAYS is finalised as 'reviewed' even if some
+    // reviewers never responded, so a paper never hangs forever on a straggler.
+    // Set REVIEW_TIMEOUT_DAYS=0 and REVIEW_SWEEP_SECS low to see it in a demo.
+    {
+        let sweeper = state.clone();
+        let timeout_days: i64 = env::var("REVIEW_TIMEOUT_DAYS").ok().and_then(|v| v.parse().ok()).unwrap_or(7);
+        let sweep_secs: u64 = env::var("REVIEW_SWEEP_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(1800);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(sweep_secs)).await;
+                let Ok(client) = sweeper.pool.get().await else { continue };
+                let cutoff = chrono::Utc::now() - chrono::Duration::days(timeout_days);
+                let rows = client
+                    .query(
+                        "SELECT DISTINCT v.id, v.file_hash FROM versions v
+                         JOIN assignments a ON a.version_id = v.id
+                         WHERE v.status = 'under_review' AND a.assigned_at < $1",
+                        &[&cutoff],
+                    )
+                    .await
+                    .unwrap_or_default();
+                for row in &rows {
+                    let vid: Uuid = row.get(0);
+                    let hash: String = row.get(1);
+                    let _ = client
+                        .execute("UPDATE versions SET status = 'reviewed' WHERE id = $1 AND status = 'under_review'", &[&vid])
+                        .await;
+                    let _ = vecsvc::set_status(&vid.to_string(), "reviewed").await;
+                    record_anchor(&sweeper, vid, "finalize_review", json!({"hash": hash, "timed_out": true})).await;
+                    eprintln!("[review] version {vid} finalised as reviewed after timeout");
+                }
+            }
+        });
+    }
 
     HttpServer::new(move || {
         let cors = Cors::default()

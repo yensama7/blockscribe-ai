@@ -113,6 +113,9 @@ process environment (set them in the shell, or via `docker compose`).
 | `INSTITUTION_NAME` | `Demo University` | optional | Shown across the UI and in OAI-PMH |
 | `EDITOR_EMAILS` | *(unset)* | optional | Comma-separated emails granted editor role. The **first user to sign in is made editor regardless.** |
 | `SIMILARITY_THRESHOLD` | `0.82` | optional | Score above which a passage is flagged as a match |
+| `AUTO_ASSIGN_REVIEWERS` | `5` | optional | Top-N reviewers auto-matched by expertise and assigned on deposit |
+| `REVIEW_TIMEOUT_DAYS` | `7` | optional | An under-review paper is finalised as *reviewed* after this many days even if some reviewers never respond |
+| `REVIEW_SWEEP_SECS` | `1800` | optional | How often the review-timeout sweeper runs (set low, e.g. `15`, to demo the timeout) |
 | `PUBLIC_BASE_URL` | `http://127.0.0.1:5000` | optional | Base URL embedded in OAI-PMH records |
 | `SOLANA_KEYPAIR_PATH` | *(auto-generates `fee_payer.json`)* | optional | Fee-payer key file (dev only; production uses a KMS/HSM) |
 

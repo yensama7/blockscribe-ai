@@ -258,9 +258,10 @@ export default function PaperDetail() {
         ['submitted', 'under_review', 'reviewed'].includes(paper.status) && (
         <Card>
           <CardHeader>
-            <CardTitle>Request a review</CardTitle>
+            <CardTitle>Add a reviewer</CardTitle>
             <CardDescription>
-              Ask a colleague — including another editor — to review this paper. They'll find it under
+              Reviewers are matched by expertise and assigned automatically on deposit. Add another
+              reviewer here — including a fellow editor — for an extra opinion. They'll find it under
               “My review assignments”. The author can't be assigned to their own paper.
             </CardDescription>
           </CardHeader>
@@ -289,7 +290,16 @@ export default function PaperDetail() {
         </Card>
       )}
 
-      {isEditor && !retraction && currentVersion && (
+      {isEditor && isAuthor && !retraction && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="pt-6 text-sm text-amber-800">
+            You're an editor, but this is your own submission — to avoid a conflict of interest,
+            another editor must publish or retract it. You can still add reviewers above.
+          </CardContent>
+        </Card>
+      )}
+
+      {isEditor && !isAuthor && !retraction && currentVersion && (
         <Card>
           <CardHeader>
             <CardTitle>Editorial actions</CardTitle>

@@ -182,13 +182,21 @@ Say: *"Honest authors can screen their own work before submitting, so they fix
 an accidental overlap before it ever becomes part of the permanent record."*
 
 **Beat 4 — Peer review with proof (2 min).**
-As editor, on **Review**, click *Match reviewers by expertise* — the system
-suggests reviewers based on what they've actually written, excluding the
-author. Assign one. Sign in as the reviewer, write a short review, submit.
-Show on the paper page: the review is there, signed and anchored.
+Point out that when the paper was deposited, the system **already assigned
+reviewers automatically** — matched by expertise (from what they've actually
+published), the author excluded. That's not the editor's job; the editor can
+*add* a reviewer for a second opinion. Sign in as the reviewer, write a short
+review, submit. Show on the paper page: the review is there, signed and
+anchored. Note that the paper only becomes *reviewed* once **every** assigned
+reviewer has responded (or after a set number of days, so one silent reviewer
+can't stall it forever).
 Say: *"Review work is normally invisible. Here every review is a signed,
 dated, permanent record — reviewers finally have provable credit, and readers
 can see that review really happened."*
+
+**Conflict of interest to call out:** if an editor deposits their own paper,
+the system won't let them publish or retract it — another editor has to make
+that call. The evidence trail is neutral by construction.
 
 **Beat 5 — Publish and retract (1 min).**
 As editor, publish the paper — status changes, anchored. Then retract the
@@ -210,8 +218,11 @@ We tell audiences the truth about which parts are trustless and which are not.
 - Meaning-based similarity screening and search (runs on our own servers —
   unpublished manuscripts never leave the institution)
 - An optional pre-deposit originality **Check** that stores nothing
-- The whole review lifecycle with signed, anchored reviews; authors and editors
-  can both request a review (an author can ask a colleague to review their work)
+- The whole review lifecycle with signed, anchored reviews: reviewers are
+  auto-assigned by expertise on deposit, a paper is only "reviewed" once all of
+  them respond (with a timeout so one silent reviewer can't stall it), and an
+  editor can never rule on their own submission
+- Authors and editors can add extra reviewers (an author can ask a colleague to review their work)
 - Version history, embargoes, metadata-only records, retraction
 - OAI-PMH feed (the standard that lets Google Scholar index a repository) and
   Dublin Core metadata on every paper page
